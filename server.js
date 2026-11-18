@@ -141,6 +141,16 @@ function seedDb() {
     bounties: [{ id: 'bnt-1', targetId: 'bot-12', placedBy: 'bot-7', amount: 5000, claimed: false, createdAt: Date.now() }],
     chat: [{ id: 'chat-1', channel: 'global', username: 'Vex Marlowe', message: 'Welcome to Vexon City. Who wants to join the Vexon Kings?', at: Date.now() }],
     trades: [],
+    stores: [
+      { id: 'store-1', ownerId: 'bot-1', ownerName: 'Vex Marlowe', name: 'Marlowe Arms', picture: null, items: [
+        { itemId: 'seed-blade', name: 'Street Blade', price: 2500, listedAt: Date.now() },
+        { itemId: 'seed-vest', name: 'Kevlar Vest', price: 8000, listedAt: Date.now() },
+      ], createdAt: Date.now() },
+      { id: 'store-2', ownerId: 'bot-4', ownerName: 'Rico Slade', name: "Slade's Supply", picture: null, items: [
+        { itemId: 'seed-lockpick', name: 'Lockpick Set', price: 1200, listedAt: Date.now() },
+        { itemId: 'seed-adrenaline', name: 'Adrenaline Shot', price: 900, listedAt: Date.now() },
+      ], createdAt: Date.now() },
+    ],
     stocks: STOCKS_SEED,
     nextId: 100,
   };
@@ -246,6 +256,7 @@ async function initDb() {
       if (r.rows.length) {
         db = r.rows[0].data;
         if (!db.trades) db.trades = [];
+  if (!db.stores) db.stores = [];
         pgMode = true;
         console.log('DB: PostgreSQL — naka-load mula sa totoong database.');
         return;
@@ -267,6 +278,7 @@ async function initDb() {
     saveDb();
   }
   if (!db.trades) db.trades = [];
+  if (!db.stores) db.stores = [];
 }
 function saveDb() {
   if (pgMode && pgPool) {
@@ -533,6 +545,86 @@ app.post('/api/pvp/result', auth, (req, res) => {
   }
   saveDb();
   res.json({ success: true, player: publicUser(u) });
+});
+
+
+// --- Player Stores (city market) ---
+// A store costs $100,000 to build. The owner stocks items from their own
+// inventory at a price; anyone can buy. Money moves on the server.
+function storePublic(s) {
+  const owner = db.users.find((u) => u.id === s.ownerId);
+  return { id: s.id, ownerId: s.ownerId, ownerName: s.ownerName, ownerAvatar: (owner && owner.avatar) || null, name: s.name, picture: s.picture || null, items: s.items || [], createdAt: s.createdAt };
+}
+app.get('/api/stores', auth, (req, res) => {
+  res.json({ stores: (db.stores || []).map(storePublic) });
+});
+app.post('/api/stores', auth, (req, res) => {
+  const u = req.user;
+  const { name, picture } = req.body || {};
+  const nm = String(name || '').trim().slice(0, 30);
+  if (nm.length < 3) return res.status(400).json({ error: 'Store name must be at least 3 characters.' });
+  if ((db.stores || []).some((s) => s.ownerId === u.id)) return res.status(400).json({ error: 'You already have a store.' });
+  if (u.money < 100000) return res.status(400).json({ error: 'You need $100,000 to build a store.' });
+  if (picture !== undefined && picture !== null && picture !== '') {
+    if (typeof picture !== 'string' || !/^data:image\/(jpeg|png|webp);base64,/.test(picture)) return res.status(400).json({ error: 'Invalid store picture (JPEG/PNG only).' });
+    if (picture.length > 300000) return res.status(400).json({ error: 'Store picture too large (max ~200KB).' });
+  }
+  u.money -= 100000;
+  const s = { id: nextId('store'), ownerId: u.id, ownerName: u.username, name: nm, picture: picture || null, items: [], createdAt: Date.now() };
+  db.stores.push(s); saveDb();
+  res.status(201).json({ success: true, store: storePublic(s), player: publicUser(u) });
+});
+app.post('/api/stores/:id/stock', auth, (req, res) => {
+  const u = req.user;
+  const s = (db.stores || []).find((x) => x.id === req.params.id);
+  if (!s) return res.status(404).json({ error: 'No such store.' });
+  if (s.ownerId !== u.id) return res.status(403).json({ error: 'Only the store owner can stock items.' });
+  const { itemId, name, price } = req.body || {};
+  const p = Math.floor(Number(price) || 0);
+  const nm = String(name || '').trim().slice(0, 60);
+  if (!itemId || !nm || p <= 0 || p > 100000000) return res.status(400).json({ error: 'Invalid item or price.' });
+  if (s.items.some((i) => i.itemId === String(itemId))) return res.status(400).json({ error: 'That item is already listed.' });
+  s.items.push({ itemId: String(itemId), name: nm, price: p, listedAt: Date.now() });
+  saveDb();
+  res.json({ success: true, store: storePublic(s) });
+});
+app.post('/api/stores/:id/unstock', auth, (req, res) => {
+  const u = req.user;
+  const s = (db.stores || []).find((x) => x.id === req.params.id);
+  if (!s) return res.status(404).json({ error: 'No such store.' });
+  if (s.ownerId !== u.id) return res.status(403).json({ error: 'Only the store owner can remove items.' });
+  const { itemId } = req.body || {};
+  s.items = s.items.filter((i) => i.itemId !== String(itemId));
+  saveDb();
+  res.json({ success: true, store: storePublic(s) });
+});
+app.post('/api/stores/:id/buy', auth, (req, res) => {
+  const u = req.user;
+  const s = (db.stores || []).find((x) => x.id === req.params.id);
+  if (!s) return res.status(404).json({ error: 'No such store.' });
+  if (s.ownerId === u.id) return res.status(400).json({ error: 'You cannot buy from your own store.' });
+  const { itemId } = req.body || {};
+  const item = s.items.find((i) => i.itemId === String(itemId));
+  if (!item) return res.status(404).json({ error: 'That item is no longer listed.' });
+  if (u.money < item.price) return res.status(400).json({ error: 'Not enough money.' });
+  const owner = db.users.find((x) => x.id === s.ownerId);
+  u.money -= item.price;
+  if (owner) owner.money += item.price;
+  u.inventory = u.inventory || {};
+  u.inventory[item.itemId] = (u.inventory[item.itemId] || 0) + 1;
+  s.items = s.items.filter((i) => i.itemId !== String(itemId));
+  saveDb();
+  res.json({ success: true, item, store: storePublic(s), player: publicUser(u) });
+});
+app.delete('/api/stores/:id', auth, (req, res) => {
+  const u = req.user;
+  const s = (db.stores || []).find((x) => x.id === req.params.id);
+  if (!s) return res.status(404).json({ error: 'No such store.' });
+  if (s.ownerId !== u.id) return res.status(403).json({ error: 'Only the store owner can close it.' });
+  const items = s.items;
+  db.stores = db.stores.filter((x) => x.id !== s.id);
+  saveDb();
+  res.json({ success: true, returnedItems: items });
 });
 
 // --- Crimes ---
