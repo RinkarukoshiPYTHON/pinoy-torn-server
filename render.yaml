@@ -1,0 +1,31 @@
+# Pinoy Torn server — Render Blueprint (one-click deploy)
+# ==========================================================
+# Paano gamitin:
+#   1. I-push ang folder na ito sa GitHub (repo hal. `pinoy-torn-server`).
+#   2. Sa Render: New → Blueprint → piliin ang repo.
+#      Gagawin na nito ang Web Service (Free plan) at bubuo ng
+#      random JWT_SECRET nang kusa — wala ka nang kailangang i-type.
+#   3. Pagkatapos mag-deploy, buksan:
+#        https://<service-name>.onrender.com/api/health
+#      Dapat lumabas: {"ok":true,"players":12}
+#
+# Paalala (Render Free):
+#   - Natutulog ang service pag walang gumagamit ng 15 minuto;
+#     ~1 minuto magising ang unang bubukas.
+#   - Walang persistent disk sa Free plan: pag nag-restart o
+#     nag-redeploy, puwedeng mawala ang data.json (lahat ng players).
+#     I-backup muna ang data bago mag-update ng server code.
+#   - Bawat push sa GitHub = awtomatikong redeploy sa Render.
+
+services:
+  - type: web
+    name: pinoy-torn-server
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true

@@ -1,0 +1,558 @@
+{
+  "users": [
+    {
+      "id": "bot-1",
+      "username": "MangBerto",
+      "isBot": true,
+      "level": 14,
+      "xp": 1400,
+      "money": 3200,
+      "bank": 6400,
+      "stats": {
+        "str": 24,
+        "def": 24,
+        "spd": 22,
+        "dex": 22
+      },
+      "bars": {
+        "energy": 80,
+        "nerve": 80,
+        "happy": 70,
+        "life": 100
+      },
+      "lastTick": 1794937896854,
+      "city": "manila",
+      "jobId": null,
+      "factionId": null,
+      "propertyId": "kubo",
+      "education": null,
+      "inventory": {},
+      "stocks": {},
+      "jailUntil": 0,
+      "hospitalUntil": 0,
+      "missions": {},
+      "counters": {
+        "crimes": 0,
+        "gym": 0,
+        "work": 0,
+        "travel": 0,
+        "pvpWin": 0
+      },
+      "createdAt": 1794937896854
+    },
+    {
+      "id": "bot-2",
+      "username": "JojoBatangas",
+      "isBot": true,
+      "level": 9,
+      "xp": 900,
+      "money": 1800,
+      "bank": 3600,
+      "stats": {
+        "str": 19,
+        "def": 19,
+        "spd": 17,
+        "dex": 17
+      },
+      "bars": {
+        "energy": 80,
+        "nerve": 80,
+        "happy": 70,
+        "life": 100
+      },
+      "lastTick": 1794937896854,
+      "city": "manila",
+      "jobId": null,
+      "factionId": null,
+      "propertyId": null,
+      "education": null,
+      "inventory": {},
+      "stocks": {},
+      "jailUntil": 0,
+      "hospitalUntil": 0,
+      "missions": {},
+      "counters": {
+        "crimes": 0,
+        "gym": 0,
+        "work": 0,
+        "travel": 0,
+        "pvpWin": 0
+      },
+      "createdAt": 1794937896854
+    },
+    {
+      "id": "bot-3",
+      "username": "AlingNena",
+      "isBot": true,
+      "level": 12,
+      "xp": 1200,
+      "money": 2600,
+      "bank": 5200,
+      "stats": {
+        "str": 22,
+        "def": 22,
+        "spd": 20,
+        "dex": 20
+      },
+      "bars": {
+        "energy": 80,
+        "nerve": 80,
+        "happy": 70,
+        "life": 100
+      },
+      "lastTick": 1794937896854,
+      "city": "manila",
+      "jobId": null,
+      "factionId": null,
+      "propertyId": null,
+      "education": null,
+      "inventory": {},
+      "stocks": {},
+      "jailUntil": 0,
+      "hospitalUntil": 0,
+      "missions": {},
+      "counters": {
+        "crimes": 0,
+        "gym": 0,
+        "work": 0,
+        "travel": 0,
+        "pvpWin": 0
+      },
+      "createdAt": 1794937896854
+    },
+    {
+      "id": "bot-4",
+      "username": "KuyaRico",
+      "isBot": true,
+      "level": 16,
+      "xp": 1600,
+      "money": 5400,
+      "bank": 10800,
+      "stats": {
+        "str": 26,
+        "def": 26,
+        "spd": 24,
+        "dex": 24
+      },
+      "bars": {
+        "energy": 80,
+        "nerve": 80,
+        "happy": 70,
+        "life": 100
+      },
+      "lastTick": 1794937896854,
+      "city": "manila",
+      "jobId": null,
+      "factionId": null,
+      "propertyId": "kubo",
+      "education": null,
+      "inventory": {},
+      "stocks": {},
+      "jailUntil": 0,
+      "hospitalUntil": 0,
+      "missions": {},
+      "counters": {
+        "crimes": 0,
+        "gym": 0,
+        "work": 0,
+        "travel": 0,
+        "pvpWin": 0
+      },
+      "createdAt": 1794937896854
+    },
+    {
+      "id": "bot-5",
+      "username": "AteLiza",
+      "isBot": true,
+      "level": 7,
+      "xp": 700,
+      "money": 1200,
+      "bank": 2400,
+      "stats": {
+        "str": 17,
+        "def": 17,
+        "spd": 15,
+        "dex": 15
+      },
+      "bars": {
+        "energy": 80,
+        "nerve": 80,
+        "happy": 70,
+        "life": 100
+      },
+      "lastTick": 1794937896854,
+      "city": "manila",
+      "jobId": null,
+      "factionId": null,
+      "propertyId": null,
+      "education": null,
+      "inventory": {},
+      "stocks": {},
+      "jailUntil": 0,
+      "hospitalUntil": 0,
+      "missions": {},
+      "counters": {
+        "crimes": 0,
+        "gym": 0,
+        "work": 0,
+        "travel": 0,
+        "pvpWin": 0
+      },
+      "createdAt": 1794937896854
+    },
+    {
+      "id": "bot-6",
+      "username": "BoyTusok",
+      "isBot": true,
+      "level": 11,
+      "xp": 1100,
+      "money": 2100,
+      "bank": 4200,
+      "stats": {
+        "str": 21,
+        "def": 21,
+        "spd": 19,
+        "dex": 19
+      },
+      "bars": {
+        "energy": 80,
+        "nerve": 80,
+        "happy": 70,
+        "life": 100
+      },
+      "lastTick": 1794937896854,
+      "city": "manila",
+      "jobId": null,
+      "factionId": null,
+      "propertyId": null,
+      "education": null,
+      "inventory": {},
+      "stocks": {},
+      "jailUntil": 0,
+      "hospitalUntil": 0,
+      "missions": {},
+      "counters": {
+        "crimes": 0,
+        "gym": 0,
+        "work": 0,
+        "travel": 0,
+        "pvpWin": 0
+      },
+      "createdAt": 1794937896854
+    },
+    {
+      "id": "bot-7",
+      "username": "KapitanDing",
+      "isBot": true,
+      "level": 20,
+      "xp": 2000,
+      "money": 9800,
+      "bank": 19600,
+      "stats": {
+        "str": 30,
+        "def": 30,
+        "spd": 28,
+        "dex": 28
+      },
+      "bars": {
+        "energy": 80,
+        "nerve": 80,
+        "happy": 70,
+        "life": 100
+      },
+      "lastTick": 1794937896854,
+      "city": "manila",
+      "jobId": null,
+      "factionId": null,
+      "propertyId": "kubo",
+      "education": null,
+      "inventory": {},
+      "stocks": {},
+      "jailUntil": 0,
+      "hospitalUntil": 0,
+      "missions": {},
+      "counters": {
+        "crimes": 0,
+        "gym": 0,
+        "work": 0,
+        "travel": 0,
+        "pvpWin": 0
+      },
+      "createdAt": 1794937896854
+    },
+    {
+      "id": "bot-8",
+      "username": "Tisoy",
+      "isBot": true,
+      "level": 5,
+      "xp": 500,
+      "money": 800,
+      "bank": 1600,
+      "stats": {
+        "str": 15,
+        "def": 15,
+        "spd": 13,
+        "dex": 13
+      },
+      "bars": {
+        "energy": 80,
+        "nerve": 80,
+        "happy": 70,
+        "life": 100
+      },
+      "lastTick": 1794937896854,
+      "city": "manila",
+      "jobId": null,
+      "factionId": null,
+      "propertyId": null,
+      "education": null,
+      "inventory": {},
+      "stocks": {},
+      "jailUntil": 0,
+      "hospitalUntil": 0,
+      "missions": {},
+      "counters": {
+        "crimes": 0,
+        "gym": 0,
+        "work": 0,
+        "travel": 0,
+        "pvpWin": 0
+      },
+      "createdAt": 1794937896854
+    },
+    {
+      "id": "bot-9",
+      "username": "MarengFe",
+      "isBot": true,
+      "level": 8,
+      "xp": 800,
+      "money": 1500,
+      "bank": 3000,
+      "stats": {
+        "str": 18,
+        "def": 18,
+        "spd": 16,
+        "dex": 16
+      },
+      "bars": {
+        "energy": 80,
+        "nerve": 80,
+        "happy": 70,
+        "life": 100
+      },
+      "lastTick": 1794937896854,
+      "city": "manila",
+      "jobId": null,
+      "factionId": null,
+      "propertyId": null,
+      "education": null,
+      "inventory": {},
+      "stocks": {},
+      "jailUntil": 0,
+      "hospitalUntil": 0,
+      "missions": {},
+      "counters": {
+        "crimes": 0,
+        "gym": 0,
+        "work": 0,
+        "travel": 0,
+        "pvpWin": 0
+      },
+      "createdAt": 1794937896854
+    },
+    {
+      "id": "bot-10",
+      "username": "Dodong",
+      "isBot": true,
+      "level": 13,
+      "xp": 1300,
+      "money": 3000,
+      "bank": 6000,
+      "stats": {
+        "str": 23,
+        "def": 23,
+        "spd": 21,
+        "dex": 21
+      },
+      "bars": {
+        "energy": 80,
+        "nerve": 80,
+        "happy": 70,
+        "life": 100
+      },
+      "lastTick": 1794937896854,
+      "city": "manila",
+      "jobId": null,
+      "factionId": null,
+      "propertyId": "kubo",
+      "education": null,
+      "inventory": {},
+      "stocks": {},
+      "jailUntil": 0,
+      "hospitalUntil": 0,
+      "missions": {},
+      "counters": {
+        "crimes": 0,
+        "gym": 0,
+        "work": 0,
+        "travel": 0,
+        "pvpWin": 0
+      },
+      "createdAt": 1794937896854
+    },
+    {
+      "id": "bot-11",
+      "username": "Inday",
+      "isBot": true,
+      "level": 6,
+      "xp": 600,
+      "money": 900,
+      "bank": 1800,
+      "stats": {
+        "str": 16,
+        "def": 16,
+        "spd": 14,
+        "dex": 14
+      },
+      "bars": {
+        "energy": 80,
+        "nerve": 80,
+        "happy": 70,
+        "life": 100
+      },
+      "lastTick": 1794937896854,
+      "city": "manila",
+      "jobId": null,
+      "factionId": null,
+      "propertyId": null,
+      "education": null,
+      "inventory": {},
+      "stocks": {},
+      "jailUntil": 0,
+      "hospitalUntil": 0,
+      "missions": {},
+      "counters": {
+        "crimes": 0,
+        "gym": 0,
+        "work": 0,
+        "travel": 0,
+        "pvpWin": 0
+      },
+      "createdAt": 1794937896854
+    },
+    {
+      "id": "bot-12",
+      "username": "Bossing",
+      "isBot": true,
+      "level": 22,
+      "xp": 2200,
+      "money": 15000,
+      "bank": 30000,
+      "stats": {
+        "str": 32,
+        "def": 32,
+        "spd": 30,
+        "dex": 30
+      },
+      "bars": {
+        "energy": 80,
+        "nerve": 80,
+        "happy": 70,
+        "life": 100
+      },
+      "lastTick": 1794937896854,
+      "city": "manila",
+      "jobId": null,
+      "factionId": null,
+      "propertyId": null,
+      "education": null,
+      "inventory": {},
+      "stocks": {},
+      "jailUntil": 0,
+      "hospitalUntil": 0,
+      "missions": {},
+      "counters": {
+        "crimes": 0,
+        "gym": 0,
+        "work": 0,
+        "travel": 0,
+        "pvpWin": 0
+      },
+      "createdAt": 1794937896854
+    }
+  ],
+  "factions": [
+    {
+      "id": "fac-1",
+      "name": "Barangay Malaya",
+      "leaderId": "bot-7",
+      "members": [
+        "bot-7",
+        "bot-1",
+        "bot-2"
+      ],
+      "warScore": 0,
+      "createdAt": 1794937896854
+    },
+    {
+      "id": "fac-2",
+      "name": "Tropa ng Quiapo",
+      "leaderId": "bot-4",
+      "members": [
+        "bot-4",
+        "bot-6",
+        "bot-10"
+      ],
+      "warScore": 0,
+      "createdAt": 1794937896854
+    }
+  ],
+  "wars": [],
+  "bounties": [
+    {
+      "id": "bnt-1",
+      "targetId": "bot-12",
+      "placedBy": "bot-7",
+      "amount": 5000,
+      "claimed": false,
+      "createdAt": 1794937896854
+    }
+  ],
+  "chat": [
+    {
+      "id": "chat-1",
+      "channel": "global",
+      "username": "MangBerto",
+      "message": "Magandang araw, mga kababayan! Sino gustong sumali sa Barangay Malaya?",
+      "at": 1794937896854
+    }
+  ],
+  "stocks": [
+    {
+      "symbol": "JEEP",
+      "name": "Jeepney Transport Corp.",
+      "price": 42
+    },
+    {
+      "symbol": "SRST",
+      "name": "Sari-Sari Holdings",
+      "price": 118
+    },
+    {
+      "symbol": "ADBO",
+      "name": "Adobo Foods Inc.",
+      "price": 85
+    },
+    {
+      "symbol": "BANKO",
+      "name": "Bangko ng Bayan",
+      "price": 210
+    },
+    {
+      "symbol": "TELCO",
+      "name": "Pinoy Telecom",
+      "price": 340
+    }
+  ],
+  "nextId": 100
+}
