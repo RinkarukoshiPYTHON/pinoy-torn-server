@@ -2,7 +2,7 @@
   "users": [
     {
       "id": "bot-1",
-      "username": "MangBerto",
+      "username": "Vex Marlowe",
       "isBot": true,
       "level": 14,
       "xp": 1400,
@@ -42,7 +42,7 @@
     },
     {
       "id": "bot-2",
-      "username": "JojoBatangas",
+      "username": "Joey Cross",
       "isBot": true,
       "level": 9,
       "xp": 900,
@@ -82,7 +82,7 @@
     },
     {
       "id": "bot-3",
-      "username": "AlingNena",
+      "username": "Nena Voss",
       "isBot": true,
       "level": 12,
       "xp": 1200,
@@ -122,7 +122,7 @@
     },
     {
       "id": "bot-4",
-      "username": "KuyaRico",
+      "username": "Rico Slade",
       "isBot": true,
       "level": 16,
       "xp": 1600,
@@ -162,7 +162,7 @@
     },
     {
       "id": "bot-5",
-      "username": "AteLiza",
+      "username": "Liza Kane",
       "isBot": true,
       "level": 7,
       "xp": 700,
@@ -202,7 +202,7 @@
     },
     {
       "id": "bot-6",
-      "username": "BoyTusok",
+      "username": "Tommy Vex",
       "isBot": true,
       "level": 11,
       "xp": 1100,
@@ -242,7 +242,7 @@
     },
     {
       "id": "bot-7",
-      "username": "KapitanDing",
+      "username": "Dario Venn",
       "isBot": true,
       "level": 20,
       "xp": 2000,
@@ -282,7 +282,7 @@
     },
     {
       "id": "bot-8",
-      "username": "Tisoy",
+      "username": "Troy Mercer",
       "isBot": true,
       "level": 5,
       "xp": 500,
@@ -322,7 +322,7 @@
     },
     {
       "id": "bot-9",
-      "username": "MarengFe",
+      "username": "Faye Marlowe",
       "isBot": true,
       "level": 8,
       "xp": 800,
@@ -362,7 +362,7 @@
     },
     {
       "id": "bot-10",
-      "username": "Dodong",
+      "username": "Dante Cole",
       "isBot": true,
       "level": 13,
       "xp": 1300,
@@ -402,7 +402,7 @@
     },
     {
       "id": "bot-11",
-      "username": "Inday",
+      "username": "Ines Vale",
       "isBot": true,
       "level": 6,
       "xp": 600,
@@ -442,7 +442,7 @@
     },
     {
       "id": "bot-12",
-      "username": "Bossing",
+      "username": "Boss Vane",
       "isBot": true,
       "level": 22,
       "xp": 2200,
@@ -484,7 +484,7 @@
   "factions": [
     {
       "id": "fac-1",
-      "name": "Barangay Malaya",
+      "name": "Vexon Kings",
       "leaderId": "bot-7",
       "members": [
         "bot-7",
@@ -496,7 +496,7 @@
     },
     {
       "id": "fac-2",
-      "name": "Tropa ng Quiapo",
+      "name": "The Hollow Syndicate",
       "leaderId": "bot-4",
       "members": [
         "bot-4",
@@ -522,8 +522,8 @@
     {
       "id": "chat-1",
       "channel": "global",
-      "username": "MangBerto",
-      "message": "Magandang araw, mga kababayan! Sino gustong sumali sa Barangay Malaya?",
+      "username": "Vex Marlowe",
+      "message": "Welcome to Vexon City. Who wants to join the Vexon Kings?",
       "at": 1794937896854
     }
   ],

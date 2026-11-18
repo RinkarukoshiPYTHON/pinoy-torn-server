@@ -1,5 +1,5 @@
 /**
- * Pinoy Torn — server-ready multiplayer backend
+ * VEXON — server-ready multiplayer backend
  * ==============================================
  * Express (REST) + ws (WebSocket).
  *
@@ -103,12 +103,12 @@ const MISSIONS = [
   { id: 'm5', name: 'Unang Laban', desc: 'Manalo ng 1 PvP laban.', type: 'pvp-win', target: 1, reward: 2000, xp: 80 },
 ];
 const CHANGELOG = [
-  { version: 'v1.0 — 2004', note: 'Unang labas: Krimen, Gym, Trabaho, Faction.' },
-  { version: 'v2.0 — 2008', note: 'Biyahe, Stocks, at Properties, dinagdag.' },
-  { version: 'v3.0 — 2015', note: 'Casino, Karera, at Bounties.' },
-  { version: 'v25.0 — Crimes 2.0', note: 'Bagong crime system, Organized Crimes.' },
-  { version: 'v26.10 — Organized Crimes 2.0', note: 'Bagong scenarios, faction crime boosts x2.5.' },
-  { version: 'v26.11 — Ranked Barangay War', note: 'Pinakabago: Ranked War sa pagitan ng mga Barangay faction.' },
+  { version: 'v1.0 — 2004', note: 'First release: Crimes, Gym, Jobs, Factions.' },
+  { version: 'v2.0 — 2008', note: 'Travel, Stocks, and Properties added.' },
+  { version: 'v3.0 — 2015', note: 'Casino, Racing, and Bounties.' },
+  { version: 'v25.0 — Crimes 2.0', note: 'New crime system, Organized Crimes.' },
+  { version: 'v26.10 — Organized Crimes 2.0', note: 'New scenarios, faction crime boosts x2.5.' },
+  { version: 'v26.11 — Ranked War', note: 'Latest: Ranked War between factions.' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -116,10 +116,10 @@ const CHANGELOG = [
 // ---------------------------------------------------------------------------
 function seedDb() {
   const bots = [
-    ['MangBerto', 14, 3200], ['JojoBatangas', 9, 1800], ['AlingNena', 12, 2600],
-    ['KuyaRico', 16, 5400], ['AteLiza', 7, 1200], ['BoyTusok', 11, 2100],
-    ['KapitanDing', 20, 9800], ['Tisoy', 5, 800], ['MarengFe', 8, 1500],
-    ['Dodong', 13, 3000], ['Inday', 6, 900], ['Bossing', 22, 15000],
+    ['Vex Marlowe', 14, 3200], ['Joey Cross', 9, 1800], ['Nena Voss', 12, 2600],
+    ['Rico Slade', 16, 5400], ['Liza Kane', 7, 1200], ['Tommy Vex', 11, 2100],
+    ['Dario Venn', 20, 9800], ['Troy Mercer', 5, 800], ['Faye Marlowe', 8, 1500],
+    ['Dante Cole', 13, 3000], ['Ines Vale', 6, 900], ['Boss Vane', 22, 15000],
   ].map(([name, level, money], i) => ({
     id: 'bot-' + (i + 1), username: name, isBot: true,
     level, xp: level * 100, money, bank: money * 2,
@@ -134,17 +134,96 @@ function seedDb() {
   return {
     users: bots,
     factions: [
-      { id: 'fac-1', name: 'Barangay Malaya', leaderId: 'bot-7', members: ['bot-7', 'bot-1', 'bot-2'], warScore: 0, createdAt: Date.now() },
-      { id: 'fac-2', name: 'Tropa ng Quiapo', leaderId: 'bot-4', members: ['bot-4', 'bot-6', 'bot-10'], warScore: 0, createdAt: Date.now() },
+      { id: 'fac-1', name: 'Vexon Kings', leaderId: 'bot-7', members: ['bot-7', 'bot-1', 'bot-2'], warScore: 0, createdAt: Date.now() },
+      { id: 'fac-2', name: 'The Hollow Syndicate', leaderId: 'bot-4', members: ['bot-4', 'bot-6', 'bot-10'], warScore: 0, createdAt: Date.now() },
     ],
     wars: [],
     bounties: [{ id: 'bnt-1', targetId: 'bot-12', placedBy: 'bot-7', amount: 5000, claimed: false, createdAt: Date.now() }],
-    chat: [{ id: 'chat-1', channel: 'global', username: 'MangBerto', message: 'Magandang araw, mga kababayan! Sino gustong sumali sa Barangay Malaya?', at: Date.now() }],
+    chat: [{ id: 'chat-1', channel: 'global', username: 'Vex Marlowe', message: 'Welcome to Vexon City. Who wants to join the Vexon Kings?', at: Date.now() }],
     trades: [],
     stocks: STOCKS_SEED,
     nextId: 100,
   };
 }
+
+// ---------------------------------------------------------------------------
+// VEXON: bot/faction renames (English syndicate names) + rank ladder
+// ---------------------------------------------------------------------------
+const VEXON_BOT_RENAMES = {
+  MangBerto: 'Vex Marlowe', JojoBatangas: 'Joey Cross', AlingNena: 'Nena Voss',
+  KuyaRico: 'Rico Slade', AteLiza: 'Liza Kane', BoyTusok: 'Tommy Vex',
+  KapitanDing: 'Dario Venn', Tisoy: 'Troy Mercer', MarengFe: 'Faye Marlowe',
+  Dodong: 'Dante Cole', Inday: 'Ines Vale', Bossing: 'Boss Vane',
+};
+const VEXON_FACTION_RENAMES = { 'Barangay Malaya': 'Vexon Kings', 'Tropa ng Quiapo': 'The Hollow Syndicate' };
+// One-time migration: renames the seeded bots/factions in the live database
+// (Postgres kv_store or data.json) the first time the new server boots.
+function migrateVexonNames() {
+  let changed = false;
+  for (const u of db.users || []) {
+    if (u.isBot && VEXON_BOT_RENAMES[u.username]) { u.username = VEXON_BOT_RENAMES[u.username]; changed = true; }
+  }
+  for (const f of db.factions || []) {
+    if (VEXON_FACTION_RENAMES[f.name]) { f.name = VEXON_FACTION_RENAMES[f.name]; changed = true; }
+  }
+  for (const c of db.chat || []) {
+    if (VEXON_BOT_RENAMES[c.username]) {
+      c.username = VEXON_BOT_RENAMES[c.username];
+      if (c.message && c.message.indexOf('Barangay Malaya') !== -1) c.message = 'Welcome to Vexon City. Who wants to join the Vexon Kings?';
+      changed = true;
+    }
+  }
+  if (changed) saveDb();
+}
+
+// Rank ladder - same table as the VEXON client (The Blood Ladder).
+// Each tier: 3 divisions (III -> II -> I), 200 pts per division.
+const RANK_LADDER = [
+  { tier: 'Bronze', win: 20, loss: 10, streak: 5 },
+  { tier: 'Silver', win: 18, loss: 15, streak: 4 },
+  { tier: 'Gold', win: 15, loss: 20, streak: 3 },
+  { tier: 'Platinum', win: 12, loss: 25, streak: 2 },
+  { tier: 'Diamond', win: 9, loss: 30, streak: 1 },
+  { tier: 'Master', win: 6, loss: 35, streak: 0 },
+  { tier: 'Grandmaster', win: 4, loss: 40, streak: 0 },
+];
+const RANK_DIVISIONS = ['III', 'II', 'I'];
+const RANK_DIV_PTS = 200;
+function defaultRank() { return { tier: 'Bronze', division: 'III', points: 0, wins: 0, losses: 0, streak: 0 }; }
+function rankIndex(r) {
+  const ti = RANK_LADDER.findIndex((t) => t.tier === r.tier);
+  const di = RANK_DIVISIONS.indexOf(r.division);
+  return { ti: ti < 0 ? 0 : ti, di: di < 0 ? 0 : di };
+}
+function applyRankResult(r, won) {
+  const rank = { tier: r.tier || 'Bronze', division: r.division || 'III', points: r.points || 0, wins: r.wins || 0, losses: r.losses || 0, streak: r.streak || 0 };
+  const idx = rankIndex(rank);
+  const table = RANK_LADDER[idx.ti];
+  let delta = 0;
+  let promoted = false;
+  if (won) {
+    rank.wins += 1;
+    rank.streak += 1;
+    delta = table.win + (rank.streak >= 2 ? table.streak : 0);
+    rank.points += delta;
+    while (rank.points >= RANK_DIV_PTS) {
+      const top = idx.ti === RANK_LADDER.length - 1 && idx.di === RANK_DIVISIONS.length - 1;
+      if (top) { rank.points = RANK_DIV_PTS; break; }
+      rank.points -= RANK_DIV_PTS;
+      if (idx.di < RANK_DIVISIONS.length - 1) idx.di += 1; else { idx.di = 0; idx.ti += 1; }
+      rank.tier = RANK_LADDER[idx.ti].tier;
+      rank.division = RANK_DIVISIONS[idx.di];
+      promoted = true;
+    }
+  } else {
+    rank.losses += 1;
+    rank.streak = 0;
+    delta = -Math.min(rank.points, table.loss);
+    rank.points = Math.max(0, rank.points + delta);
+  }
+  return { rank, delta, promoted };
+}
+
 let db;
 // ---------------------------------------------------------------------------
 // Datastore: PostgreSQL kapag may DATABASE_URL, data.json kapag wala.
@@ -234,7 +313,7 @@ function verifyToken(token) {
 }
 function publicUser(u) {
   if (!u) return null;
-  const { passwordHash, email, ...rest } = u;
+  const { passwordHash, email, cloudSave, ...rest } = u;
   return rest;
 }
 function regen(u) {
@@ -263,8 +342,8 @@ function statusOf(u) {
 }
 function guard(u, res) {
   const s = statusOf(u);
-  if (s.jailed) return res.status(423).json({ error: 'Nasa kulungan ka pa.', jailEndsInSec: s.jailEndsInSec });
-  if (s.hospitalized) return res.status(423).json({ error: 'Nasa ospital ka pa.', hospitalEndsInSec: s.hospitalEndsInSec });
+  if (s.jailed) return res.status(423).json({ error: 'You are still in jail.', jailEndsInSec: s.jailEndsInSec });
+  if (s.hospitalized) return res.status(423).json({ error: 'You are still in the hospital.', hospitalEndsInSec: s.hospitalEndsInSec });
   return null;
 }
 function broadcast(obj) {
@@ -294,16 +373,16 @@ function auth(req, res, next) {
   const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
   const userId = token ? verifyToken(token) : null;
   const user = userId ? db.users.find((u) => u.id === userId) : null;
-  if (!user) return res.status(401).json({ error: 'Kailangan mag-login. (token missing/invalid)' });
+  if (!user) return res.status(401).json({ error: 'You need to log in. (token missing/invalid)' });
   regen(user);
   req.user = user;
   next();
 }
 
 app.get('/', (req, res) => res.json({
-  game: 'Pinoy Torn', status: 'online',
+  game: 'VEXON', status: 'online',
   players: db.users.length, factions: db.factions.length,
-  docs: 'GET /api/updates — tingnan ang README.md para sa lahat ng endpoints.',
+  docs: 'GET /api/updates — see README.md for all endpoints.',
 }));
 app.get('/api/health', (req, res) => res.json({ ok: true, time: new Date().toISOString(), players: db.users.length }));
 app.get('/api/updates', (req, res) => res.json({ changelog: CHANGELOG }));
@@ -313,11 +392,11 @@ app.post('/api/auth/register', (req, res) => {
   const { username, email, password } = req.body || {};
   const em = String(email || '').trim().toLowerCase();
   if (!username || !em || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em) || !password || String(password).length < 4)
-    return res.status(400).json({ error: 'Kailangan ng username, valid na email, at password (min. 4 chars).' });
+    return res.status(400).json({ error: 'Username, a valid email, and a password (min. 4 chars) are required.' });
   if (db.users.some((u) => u.username.toLowerCase() === String(username).toLowerCase()))
-    return res.status(409).json({ error: 'May gumagamit na ng username na yan.' });
+    return res.status(409).json({ error: 'That username is already taken.' });
   if (db.users.some((u) => (u.email || '').toLowerCase() === em))
-    return res.status(409).json({ error: 'May account na gamit ang email na yan.' });
+    return res.status(409).json({ error: 'An account already uses that email.' });
   const u = {
     id: nextId('user'), username: String(username).slice(0, 20), email: em, passwordHash: hashPassword(String(password)),
     isBot: false, level: 1, xp: 0, money: 1000, bank: 0,
@@ -337,7 +416,7 @@ app.post('/api/auth/login', (req, res) => {
   const id = String(login || username || email || '').trim().toLowerCase();
   const u = db.users.find((x) => x.username.toLowerCase() === id || (x.email || '').toLowerCase() === id);
   if (!u || u.isBot || !u.passwordHash || !checkPassword(String(password || ''), u.passwordHash))
-    return res.status(401).json({ error: 'Maling email/username o password.' });
+    return res.status(401).json({ error: 'Wrong email/username or password.' });
   regen(u); saveDb();
   res.json({ token: makeToken(u.id), player: { ...publicUser(u), email: u.email } });
 });
@@ -350,11 +429,11 @@ app.get('/api/me', auth, (req, res) => res.json({ player: publicUser(req.user), 
 app.post('/api/me/avatar', auth, (req, res) => {
   const u = req.user;
   const { avatar } = req.body || {};
-  if (avatar === null || avatar === '') { u.avatar = null; saveDb(); return res.json({ success: true, message: 'Tinanggal ang profile pic.', player: publicUser(u) }); }
-  if (typeof avatar !== 'string' || !/^data:image\/(jpeg|png|webp);base64,/.test(avatar)) return res.status(400).json({ error: 'Hindi valid na larawan (JPEG/PNG lang).' });
-  if (avatar.length > 300000) return res.status(400).json({ error: 'Masyadong malaki ang larawan (max ~200KB).' });
+  if (avatar === null || avatar === '') { u.avatar = null; saveDb(); return res.json({ success: true, message: 'Profile pic removed.', player: publicUser(u) }); }
+  if (typeof avatar !== 'string' || !/^data:image\/(jpeg|png|webp);base64,/.test(avatar)) return res.status(400).json({ error: 'Invalid image (JPEG/PNG only).' });
+  if (avatar.length > 300000) return res.status(400).json({ error: 'Image too large (max ~200KB).' });
   u.avatar = avatar; saveDb();
-  res.json({ success: true, message: 'Na-save ang profile pic mo.', player: publicUser(u) });
+  res.json({ success: true, message: 'Your profile pic has been saved.', player: publicUser(u) });
 });
 app.get('/api/players', auth, (req, res) => {
   const list = db.users.map((u) => { regen(u); return publicUser(u); })
@@ -364,7 +443,7 @@ app.get('/api/players', auth, (req, res) => {
 });
 app.get('/api/players/:id', auth, (req, res) => {
   const u = db.users.find((x) => x.id === req.params.id);
-  if (!u) return res.status(404).json({ error: 'Walang ganyang player.' });
+  if (!u) return res.status(404).json({ error: 'No such player.' });
   regen(u); saveDb();
   res.json({ player: publicUser(u) });
 });
@@ -375,8 +454,85 @@ app.get('/api/leaderboard', auth, (req, res) => {
     : by === 'money' ? (u) => u.money + (u.bank || 0)
     : (u) => u.xp;
   const top = [...db.users].filter((u) => !u.isBot).sort((a, b) => key(b) - key(a)).slice(0, 20)
-    .map((u) => ({ id: u.id, username: u.username, level: u.level, xp: u.xp, money: u.money, bank: u.bank || 0, crimes: (u.counters && u.counters.crimes) || 0, pvpWin: (u.counters && u.counters.pvpWin) || 0, avatar: u.avatar || null, isBot: false }));
+    .map((u) => ({ id: u.id, username: u.username, level: u.level, xp: u.xp, money: u.money, bank: u.bank || 0, crimes: (u.counters && u.counters.crimes) || 0, pvpWin: (u.counters && u.counters.pvpWin) || 0, avatar: u.avatar || null, rank: u.rank || null, isBot: false }));
   res.json({ leaderboard: top, by });
+});
+
+
+// --- Ranked Mode (The Blood Ladder) ---
+// The client POSTs each ranked fight result; the server applies the ladder
+// math itself so rank is authoritative and visible to other players.
+app.post('/api/rank/result', auth, (req, res) => {
+  const u = req.user;
+  const { opponentId, won } = req.body || {};
+  if (typeof won !== 'boolean') return res.status(400).json({ error: 'won must be true or false.' });
+  const opp = opponentId ? db.users.find((x) => x.id === opponentId) : null;
+  if (opponentId && (!opp || opp.id === u.id)) return res.status(404).json({ error: 'No such opponent.' });
+  if (!u.rank) u.rank = defaultRank();
+  const out = applyRankResult(u.rank, won);
+  u.rank = out.rank;
+  u.counters.rankWins = (u.counters.rankWins || 0) + (won ? 1 : 0);
+  u.counters.rankLosses = (u.counters.rankLosses || 0) + (won ? 0 : 1);
+  saveDb();
+  res.json({ success: true, rank: u.rank, delta: out.delta, promoted: out.promoted, player: publicUser(u) });
+});
+app.get('/api/rank/ladder', auth, (req, res) => {
+  res.json({ ladder: RANK_LADDER, divisions: RANK_DIVISIONS, pointsPerDivision: RANK_DIV_PTS, myRank: req.user.rank || defaultRank() });
+});
+
+// --- Cloud save: cross-device progress ---
+// The client uploads its whole game state (throttled) and downloads it on
+// login, so progress survives a new phone. Top-level fields are also synced
+// onto the server user so leaderboards and the player list stay truthful.
+app.get('/api/me/save', auth, (req, res) => {
+  res.json({ save: req.user.cloudSave || null, updatedAt: req.user.cloudSaveUpdatedAt || 0 });
+});
+app.post('/api/me/save', auth, (req, res) => {
+  const u = req.user;
+  const save = (req.body || {}).save;
+  if (!save || typeof save !== 'object' || Array.isArray(save)) return res.status(400).json({ error: 'save must be an object.' });
+  if (JSON.stringify(save).length > 200000) return res.status(400).json({ error: 'Save too large (max ~200KB).' });
+  u.cloudSave = save;
+  u.cloudSaveUpdatedAt = Date.now();
+  const num = (v) => (typeof v === 'number' && isFinite(v) ? v : null);
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  let v;
+  if ((v = num(save.money)) !== null) u.money = clamp(Math.floor(v), 0, 100000000);
+  if ((v = num(save.bank)) !== null) u.bank = clamp(Math.floor(v), 0, 100000000);
+  if ((v = num(save.xp)) !== null) { u.xp = clamp(Math.floor(v), 0, 100000000); u.level = levelFor(u.xp); }
+  if ((v = num(save.level)) !== null && u.level < clamp(Math.floor(v), 1, 100)) u.level = clamp(Math.floor(v), 1, 100);
+  if (save.stats && typeof save.stats === 'object') {
+    for (const k of ['str', 'def', 'spd', 'dex']) {
+      if ((v = num(save.stats[k])) !== null) u.stats[k] = clamp(v, 0, 1000);
+    }
+  }
+  if (save.counters && typeof save.counters === 'object') {
+    u.counters = u.counters || {};
+    for (const k of ['crimes', 'gym', 'work', 'travel', 'pvpWin', 'pvpLoss', 'rankWins', 'rankLosses']) {
+      if ((v = num(save.counters[k])) !== null) u.counters[k] = Math.max(u.counters[k] || 0, Math.floor(v));
+    }
+  }
+  saveDb();
+  res.json({ success: true, updatedAt: u.cloudSaveUpdatedAt, player: publicUser(u) });
+});
+
+// --- PvP result recording (arena fights are played locally, turn by turn;
+// the client reports the outcome so wins/losses count on the server too) ---
+app.post('/api/pvp/result', auth, (req, res) => {
+  const u = req.user;
+  const { opponentId, won } = req.body || {};
+  if (typeof won !== 'boolean') return res.status(400).json({ error: 'won must be true or false.' });
+  const opp = opponentId ? db.users.find((x) => x.id === opponentId) : null;
+  if (opponentId && (!opp || opp.id === u.id)) return res.status(404).json({ error: 'No such opponent.' });
+  u.counters.pvpWin = (u.counters.pvpWin || 0) + (won ? 1 : 0);
+  u.counters.pvpLoss = (u.counters.pvpLoss || 0) + (won ? 0 : 1);
+  if (opp) {
+    opp.counters = opp.counters || {};
+    opp.counters.pvpWin = (opp.counters.pvpWin || 0) + (won ? 0 : 1);
+    opp.counters.pvpLoss = (opp.counters.pvpLoss || 0) + (won ? 1 : 0);
+  }
+  saveDb();
+  res.json({ success: true, player: publicUser(u) });
 });
 
 // --- Crimes ---
@@ -566,7 +722,7 @@ app.post('/api/travel', auth, (req, res) => {
 });
 
 // --- Bank ---
-app.get('/api/bank', auth, (req, res) => res.json({ money: req.user.money, bank: req.user.bank, interest: '2% kada araw (kapag nag-login ulit kinabukasan, dagdag ito sa susunod na bersyon)' }));
+app.get('/api/bank', auth, (req, res) => res.json({ money: req.user.money, bank: req.user.bank, interest: '2% per day (added when you log in again tomorrow)' }));
 app.post('/api/bank/deposit', auth, (req, res) => {
   const u = req.user; const amount = Math.floor(Number((req.body || {}).amount) || 0);
   if (amount <= 0 || amount > u.money) return res.status(400).json({ error: 'Hindi valid ang halaga.' });
@@ -685,10 +841,10 @@ app.post('/api/pvp/attack', auth, (req, res) => {
   if (guard(u, res)) return;
   const { targetId, intent } = req.body || {};
   const target = db.users.find((x) => x.id === targetId);
-  if (!target || target.id === u.id) return res.status(404).json({ error: 'Walang ganyang kalaban.' });
-  if (u.bars.nerve < 15) return res.status(400).json({ error: 'Kulang ang Nerve mo (kailangan 15).' });
+  if (!target || target.id === u.id) return res.status(404).json({ error: 'No such opponent.' });
+  if (u.bars.nerve < 15) return res.status(400).json({ error: 'Not enough Nerve (need 15).' });
   const st = statusOf(target);
-  if (st.hospitalized) return res.status(400).json({ error: 'Nasa ospital na ang target mo.' });
+  if (st.hospitalized) return res.status(400).json({ error: 'Your target is already in the hospital.' });
   u.bars.nerve -= 15;
   const mode = ['attack', 'mug', 'hospitalize'].includes(intent) ? intent : 'attack';
   const { won, atk, def } = pvpFight(u, target, mode);
@@ -702,7 +858,7 @@ app.post('/api/pvp/attack', auth, (req, res) => {
     // Bounty claim: may bounty ba ang target?
     const bounty = db.bounties.find((b) => b.targetId === target.id && !b.claimed);
     if (bounty) { bounty.claimed = true; bounty.claimedBy = u.id; u.money += bounty.amount; loot += bounty.amount; }
-    logEvent(u.username, `Tinalo ni ${u.username} si ${target.username} sa laban${mode === 'mug' ? ' at ninakawan ng ₱' + loot : ''}!`);
+    logEvent(u.username, `${u.username} defeated ${target.username} in a fight${mode === 'mug' ? ' and robbed $' + loot : ''}!`);
   } else {
     u.bars.life = Math.max(1, u.bars.life - 20);
     if (u.bars.life <= 10) u.hospitalUntil = Date.now() + 15 * 60 * 1000;
@@ -719,8 +875,8 @@ app.post('/api/bounties', auth, (req, res) => {
   const { targetId, amount } = req.body || {};
   const target = db.users.find((x) => x.id === targetId);
   const amt = Math.floor(Number(amount) || 0);
-  if (!target || target.id === u.id) return res.status(404).json({ error: 'Walang ganyang target.' });
-  if (amt < 1000 || amt > u.money) return res.status(400).json({ error: 'Min. bounty ₱1,000, at dapat kaya ng pera mo.' });
+  if (!target || target.id === u.id) return res.status(404).json({ error: 'No such target.' });
+  if (amt < 1000 || amt > u.money) return res.status(400).json({ error: 'Min. bounty $1,000, and it must be within your money.' });
   u.money -= amt;
   const b = { id: nextId('bnt'), targetId, placedBy: u.id, amount: amt, claimed: false, createdAt: Date.now() };
   db.bounties.push(b); saveDb();
@@ -827,7 +983,7 @@ app.post('/api/missions/:id/claim', auth, (req, res) => {
 });
 
 // --- 404 / error ---
-app.use((req, res) => res.status(404).json({ error: 'Walang ganyang endpoint.', hint: 'GET /api/updates o tingnan ang README.md.' }));
+app.use((req, res) => res.status(404).json({ error: 'No such endpoint.', hint: 'GET /api/updates or see README.md.' }));
 app.use((err, req, res, next) => { console.error(err); res.status(500).json({ error: 'Server error.' }); });
 
 // ---------------------------------------------------------------------------
@@ -865,9 +1021,10 @@ wss.on('connection', (ws, req) => {
 });
 
 initDb().then(() => {
+  migrateVexonNames();
   server.listen(PORT, () => {
-    console.log(`Pinoy Torn server running on http://localhost:${PORT}`);
+    console.log(`VEXON server running on http://localhost:${PORT}`);
     console.log(`Players (seeded bots + real): ${db.users.length} | Factions: ${db.factions.length}`);
     console.log('WS: ws://localhost:' + PORT + '/ws?token=...');
   });
-}).catch((e) => { console.error('Hindi nag-start ang server:', e); process.exit(1); });
+}).catch((e) => { console.error('Server failed to start:', e); process.exit(1); });
