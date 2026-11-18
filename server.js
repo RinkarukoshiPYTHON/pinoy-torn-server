@@ -344,6 +344,18 @@ app.post('/api/auth/login', (req, res) => {
 
 // --- Profile / players ---
 app.get('/api/me', auth, (req, res) => res.json({ player: publicUser(req.user), status: statusOf(req.user) }));
+// Profile pic: POST /api/me/avatar {avatar} — data URL ng image (JPEG/PNG, ~<200KB).
+// Naka-save sa user record kaya kasama na siya sa /api/players at /api/me
+// (publicUser ay nagbabalik ng lahat ng field maliban sa passwordHash/email).
+app.post('/api/me/avatar', auth, (req, res) => {
+  const u = req.user;
+  const { avatar } = req.body || {};
+  if (avatar === null || avatar === '') { u.avatar = null; saveDb(); return res.json({ success: true, message: 'Tinanggal ang profile pic.', player: publicUser(u) }); }
+  if (typeof avatar !== 'string' || !/^data:image\/(jpeg|png|webp);base64,/.test(avatar)) return res.status(400).json({ error: 'Hindi valid na larawan (JPEG/PNG lang).' });
+  if (avatar.length > 300000) return res.status(400).json({ error: 'Masyadong malaki ang larawan (max ~200KB).' });
+  u.avatar = avatar; saveDb();
+  res.json({ success: true, message: 'Na-save ang profile pic mo.', player: publicUser(u) });
+});
 app.get('/api/players', auth, (req, res) => {
   const list = db.users.map((u) => { regen(u); return publicUser(u); })
     .sort((a, b) => b.level - a.level || b.money - a.money);
@@ -363,7 +375,7 @@ app.get('/api/leaderboard', auth, (req, res) => {
     : by === 'money' ? (u) => u.money + (u.bank || 0)
     : (u) => u.xp;
   const top = [...db.users].filter((u) => !u.isBot).sort((a, b) => key(b) - key(a)).slice(0, 20)
-    .map((u) => ({ id: u.id, username: u.username, level: u.level, xp: u.xp, money: u.money, bank: u.bank || 0, crimes: (u.counters && u.counters.crimes) || 0, pvpWin: (u.counters && u.counters.pvpWin) || 0, isBot: false }));
+    .map((u) => ({ id: u.id, username: u.username, level: u.level, xp: u.xp, money: u.money, bank: u.bank || 0, crimes: (u.counters && u.counters.crimes) || 0, pvpWin: (u.counters && u.counters.pvpWin) || 0, avatar: u.avatar || null, isBot: false }));
   res.json({ leaderboard: top, by });
 });
 
