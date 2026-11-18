@@ -136,6 +136,7 @@ function seedDb() {
     wars: [],
     bounties: [{ id: 'bnt-1', targetId: 'bot-12', placedBy: 'bot-7', amount: 5000, claimed: false, createdAt: Date.now() }],
     chat: [{ id: 'chat-1', channel: 'global', username: 'MangBerto', message: 'Magandang araw, mga kababayan! Sino gustong sumali sa Barangay Malaya?', at: Date.now() }],
+    trades: [],
     stocks: STOCKS_SEED,
     nextId: 100,
   };
@@ -155,6 +156,7 @@ function saveDb() {
   fs.renameSync(tmp, DATA_FILE);
 }
 loadDb();
+if (!db.trades) db.trades = [];
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -310,9 +312,14 @@ app.get('/api/players/:id', auth, (req, res) => {
   res.json({ player: publicUser(u) });
 });
 app.get('/api/leaderboard', auth, (req, res) => {
-  const top = [...db.users].sort((a, b) => b.xp - a.xp).slice(0, 20)
-    .map((u) => ({ id: u.id, username: u.username, level: u.level, xp: u.xp, money: u.money, isBot: !!u.isBot }));
-  res.json({ leaderboard: top });
+  // Real players lang — walang bot dito. ?by=crimes | money | xp (default xp)
+  const by = req.query.by === 'crimes' ? 'crimes' : req.query.by === 'money' ? 'money' : 'xp';
+  const key = by === 'crimes' ? (u) => (u.counters && u.counters.crimes) || 0
+    : by === 'money' ? (u) => u.money + (u.bank || 0)
+    : (u) => u.xp;
+  const top = [...db.users].filter((u) => !u.isBot).sort((a, b) => key(b) - key(a)).slice(0, 20)
+    .map((u) => ({ id: u.id, username: u.username, level: u.level, xp: u.xp, money: u.money, bank: u.bank || 0, crimes: (u.counters && u.counters.crimes) || 0, pvpWin: (u.counters && u.counters.pvpWin) || 0, isBot: false }));
+  res.json({ leaderboard: top, by });
 });
 
 // --- Crimes ---
@@ -663,10 +670,11 @@ app.post('/api/bounties', auth, (req, res) => {
   res.status(201).json({ success: true, bounty: b, player: publicUser(u) });
 });
 
-// --- Chat ---
+// --- Chat (real players lang — walang bot) ---
 app.get('/api/chat', auth, (req, res) => {
   const channel = req.query.channel || 'global';
-  res.json({ chat: db.chat.filter((c) => c.channel === channel).slice(-50) });
+  const botNames = new Set(db.users.filter((u) => u.isBot).map((u) => u.username));
+  res.json({ chat: db.chat.filter((c) => c.channel === channel && !botNames.has(c.username)).slice(-50) });
 });
 app.post('/api/chat', auth, (req, res) => {
   const u = req.user;
@@ -676,6 +684,49 @@ app.post('/api/chat', auth, (req, res) => {
   db.chat.push(msg); saveDb();
   broadcast({ type: 'chat', ...msg });
   res.status(201).json({ success: true, message: msg });
+});
+
+// --- Trade (real players lang — walang bot; item galing sa inventory ng seller) ---
+app.get('/api/trade', auth, (req, res) => {
+  const open = db.trades.filter((t) => t.status === 'open').map((t) => {
+    const s = db.users.find((u) => u.id === t.sellerId);
+    return { ...t, sellerName: s ? s.username : '?', sellerLevel: s ? s.level : 0 };
+  });
+  res.json({ trades: open });
+});
+app.post('/api/trade', auth, (req, res) => {
+  const u = req.user;
+  const { itemId, itemName, price } = req.body || {};
+  const p = Number(price);
+  if (!itemId || !p || p <= 0) return res.status(400).json({ error: 'Kulang ang detalye ng trade.' });
+  if (!u.inventory || !u.inventory[itemId] || u.inventory[itemId] < 1) return res.status(400).json({ error: 'Wala ka nyan sa inventory mo.' });
+  u.inventory[itemId] -= 1;
+  if (u.inventory[itemId] <= 0) delete u.inventory[itemId];
+  const t = { id: nextId('trd'), sellerId: u.id, itemId, itemName: String(itemName || itemId).slice(0, 80), price: p, status: 'open', createdAt: Date.now() };
+  db.trades.push(t); saveDb();
+  res.status(201).json({ success: true, trade: t, player: publicUser(u) });
+});
+app.post('/api/trade/:id/accept', auth, (req, res) => {
+  const u = req.user;
+  const t = db.trades.find((x) => x.id === req.params.id);
+  if (!t || t.status !== 'open') return res.status(404).json({ error: 'Wala na yung trade na yan.' });
+  if (t.sellerId === u.id) return res.status(400).json({ error: 'Sarili mong trade yan.' });
+  if (u.money < t.price) return res.status(400).json({ error: 'Kulang ang pera mo.' });
+  const seller = db.users.find((x) => x.id === t.sellerId);
+  if (!seller) return res.status(404).json({ error: 'Wala na yung seller.' });
+  u.money -= t.price; seller.money += t.price;
+  u.inventory = u.inventory || {}; u.inventory[t.itemId] = (u.inventory[t.itemId] || 0) + 1;
+  t.status = 'sold'; t.buyerId = u.id; saveDb();
+  res.json({ success: true, message: `Nabili mo ang ${t.itemName} sa halagang ₱${t.price}.`, player: publicUser(u) });
+});
+app.post('/api/trade/:id/cancel', auth, (req, res) => {
+  const u = req.user;
+  const t = db.trades.find((x) => x.id === req.params.id);
+  if (!t || t.status !== 'open') return res.status(404).json({ error: 'Wala na yung trade na yan.' });
+  if (t.sellerId !== u.id) return res.status(403).json({ error: 'Hindi sa iyo yan.' });
+  u.inventory = u.inventory || {}; u.inventory[t.itemId] = (u.inventory[t.itemId] || 0) + 1;
+  t.status = 'cancelled'; saveDb();
+  res.json({ success: true, message: 'Kinansela ang trade, bumalik ang item sa iyo.', player: publicUser(u) });
 });
 
 // --- Jail / hospital ---
