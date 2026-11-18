@@ -1,8 +1,12 @@
 /**
  * Pinoy Torn — server-ready multiplayer backend
  * ==============================================
- * Express (REST) + ws (WebSocket), isang JSON file lang ang datastore.
- * Walang external database, walang bayad na serbisyo.
+ * Express (REST) + ws (WebSocket).
+ *
+ * Datastore: PostgreSQL kapag may DATABASE_URL (totoong database — hindi
+ * nawawala ang progress pag nag-restart ang server), data.json lang kapag wala.
+ * Sa Render, ang render.yaml ay gumagawa ng libreng PostgreSQL at naglalagay
+ * ng DATABASE_URL nang kusa.
  *
  * TAKBO (local):  npm install && npm start        -> http://localhost:3000
  * CLIENT:         isang setting lang — API_URL (tingnan ang client-config.example.js)
@@ -142,21 +146,62 @@ function seedDb() {
   };
 }
 let db;
-function loadDb() {
+// ---------------------------------------------------------------------------
+// Datastore: PostgreSQL kapag may DATABASE_URL, data.json kapag wala.
+// Ang buong game state ay isang JSONB row (key='main') — kaya walang kailangang
+// baguhin sa ibang bahagi ng server; ang saveDb() lang ang nagbago.
+// Sa Postgres mode, naka-queue ang mga save para sunod-sunod sila.
+// ---------------------------------------------------------------------------
+let pgPool = null;
+let pgMode = false;
+let saveQueue = Promise.resolve();
+async function initDb() {
+  const url = process.env.DATABASE_URL;
+  if (url) {
+    try {
+      const { Pool } = require('pg');
+      const needsSsl = url.includes('sslmode=require') || /\.render\.com/i.test(url) || /\.onrender\.com/i.test(url);
+      pgPool = new Pool({ connectionString: url, max: 3, ssl: needsSsl ? { rejectUnauthorized: false } : undefined });
+      await pgPool.query('CREATE TABLE IF NOT EXISTS kv_store (key TEXT PRIMARY KEY, data JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())');
+      const r = await pgPool.query('SELECT data FROM kv_store WHERE key = $1', ['main']);
+      if (r.rows.length) {
+        db = r.rows[0].data;
+        if (!db.trades) db.trades = [];
+        pgMode = true;
+        console.log('DB: PostgreSQL — naka-load mula sa totoong database.');
+        return;
+      }
+      db = seedDb();
+      pgMode = true;
+      await pgPool.query('INSERT INTO kv_store (key, data) VALUES ($1, $2)', ['main', JSON.stringify(db)]);
+      console.log('DB: PostgreSQL — bagong seed na-save sa database.');
+      return;
+    } catch (e) {
+      console.error('DB: hindi maabot ang PostgreSQL, bumabalik sa data.json:', e.message);
+      pgPool = null; pgMode = false;
+    }
+  }
   if (fs.existsSync(DATA_FILE)) {
     db = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
   } else {
     db = seedDb();
     saveDb();
   }
+  if (!db.trades) db.trades = [];
 }
 function saveDb() {
+  if (pgMode && pgPool) {
+    const snapshot = JSON.stringify(db);
+    saveQueue = saveQueue.then(() => pgPool.query(
+      'INSERT INTO kv_store (key, data) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()',
+      ['main', snapshot]
+    )).catch((e) => console.error('DB save failed (Postgres):', e.message));
+    return;
+  }
   const tmp = DATA_FILE + '.tmp';
   fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
   fs.renameSync(tmp, DATA_FILE);
 }
-loadDb();
-if (!db.trades) db.trades = [];
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -807,8 +852,10 @@ wss.on('connection', (ws, req) => {
   ws.on('close', () => broadcast({ type: 'online', online: wss.clients.size }));
 });
 
-server.listen(PORT, () => {
-  console.log(`Pinoy Torn server running on http://localhost:${PORT}`);
-  console.log(`Players (seeded bots + real): ${db.users.length} | Factions: ${db.factions.length}`);
-  console.log('WS: ws://localhost:' + PORT + '/ws?token=...');
-});
+initDb().then(() => {
+  server.listen(PORT, () => {
+    console.log(`Pinoy Torn server running on http://localhost:${PORT}`);
+    console.log(`Players (seeded bots + real): ${db.users.length} | Factions: ${db.factions.length}`);
+    console.log('WS: ws://localhost:' + PORT + '/ws?token=...');
+  });
+}).catch((e) => { console.error('Hindi nag-start ang server:', e); process.exit(1); });

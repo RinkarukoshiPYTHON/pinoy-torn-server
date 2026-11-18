@@ -12,10 +12,18 @@
 # Paalala (Render Free):
 #   - Natutulog ang service pag walang gumagamit ng 15 minuto;
 #     ~1 minuto magising ang unang bubukas.
-#   - Walang persistent disk sa Free plan: pag nag-restart o
-#     nag-redeploy, puwedeng mawala ang data.json (lahat ng players).
-#     I-backup muna ang data bago mag-update ng server code.
+#   - Naka-PostgreSQL na ang data (DATABASE_URL): hindi na nawawala ang
+#     progress pag nag-restart o nag-redeploy ang server. Pero tandaan:
+#     ang libreng PostgreSQL ng Render ay nag-e-expire pagkatapos ng
+#     90 araw — bago dumating yun, ilipat sa Supabase/Neon (libre rin,
+#     walang expiry) o sa bayad na plan.
 #   - Bawat push sa GitHub = awtomatikong redeploy sa Render.
+
+databases:
+  - name: pinoy-torn-db
+    plan: free
+    databaseName: pinoy_torn
+    user: pinoy_torn
 
 services:
   - type: web
@@ -29,3 +37,7 @@ services:
         value: production
       - key: JWT_SECRET
         generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: pinoy-torn-db
+          property: connectionString
