@@ -154,6 +154,8 @@ function seedDb() {
       ], createdAt: Date.now() },
     ],
     stocks: STOCKS_SEED,
+    config: { ...DEFAULT_CONFIG },
+    broadcast: null,
     nextId: 100,
   };
 }
@@ -237,6 +239,23 @@ function applyRankResult(r, won) {
 }
 
 // ---------------------------------------------------------------------------
+// Owner-tunable game config (db.config) + city-wide broadcast (db.broadcast).
+// Defaults are seeded in seedDb(), guarded on every initDb load path, and
+// migrated at boot by ensureConfig() (called from ensureTagsAndPids()).
+// ---------------------------------------------------------------------------
+const DEFAULT_CONFIG = { payoutMultiplier: 1, xpMultiplier: 1, startingMoney: 5000, storeBuildCost: 500000, bankInterest: 0.03 };
+const CONFIG_RANGES = { payoutMultiplier: [0.1, 5], xpMultiplier: [0.1, 5], startingMoney: [500, 100000], storeBuildCost: [10000, 5000000], bankInterest: [0, 0.2] };
+function ensureConfig() {
+  let changed = false;
+  if (!db.config || typeof db.config !== 'object') { db.config = { ...DEFAULT_CONFIG }; changed = true; }
+  else for (const k of Object.keys(DEFAULT_CONFIG)) {
+    if (typeof db.config[k] !== 'number' || !isFinite(db.config[k])) { db.config[k] = DEFAULT_CONFIG[k]; changed = true; }
+  }
+  if (!('broadcast' in db)) { db.broadcast = null; changed = true; }
+  return changed;
+}
+
+// ---------------------------------------------------------------------------
 // Tags & roles: Owner / Head Admin / Admin / Newb Admin / Helper.
 // The Owner is the account whose username matches OWNER_USERNAME (env, default
 // 'Mavstuss'). The Owner tag is only ever set by this bootstrap — it can
@@ -274,6 +293,7 @@ function ensureTagsAndPids() {
   if (!db.mail) { db.mail = []; changed = true; }
   if (!db.auctions) { db.auctions = []; changed = true; }
   if (!db.storeOverrides) { db.storeOverrides = {}; changed = true; }
+  if (ensureConfig()) changed = true;
   if (changed) saveDb();
 }
 function findPlayerByRef(ref) {
@@ -308,6 +328,8 @@ async function initDb() {
   if (!db.stores) db.stores = [];
   if (!db.mail) db.mail = [];
   if (!db.auctions) db.auctions = [];
+  if (!db.config) db.config = { ...DEFAULT_CONFIG };
+  if (!('broadcast' in db)) db.broadcast = null;
         pgMode = true;
         console.log('DB: PostgreSQL — naka-load mula sa totoong database.');
         return;
@@ -332,6 +354,8 @@ async function initDb() {
   if (!db.stores) db.stores = [];
   if (!db.mail) db.mail = [];
   if (!db.auctions) db.auctions = [];
+  if (!db.config) db.config = { ...DEFAULT_CONFIG };
+  if (!('broadcast' in db)) db.broadcast = null;
 }
 function saveDb() {
   if (pgMode && pgPool) {
@@ -690,7 +714,7 @@ app.delete('/api/stores/:id', auth, (req, res) => {
   const u = req.user;
   const s = (db.stores || []).find((x) => x.id === req.params.id);
   if (!s) return res.status(404).json({ error: 'No such store.' });
-  if (s.ownerId !== u.id) return res.status(403).json({ error: 'Only the store owner can close it.' });
+  if (s.ownerId !== u.id && u.tag !== 'Owner') return res.status(403).json({ error: 'Only the store owner (or the Owner) can close it.' });
   const items = s.items;
   db.stores = db.stores.filter((x) => x.id !== s.id);
   saveDb();
@@ -1391,10 +1415,11 @@ app.post('/api/admin/mute', auth, requireTag(2), (req, res) => {
   if (!target || target.isBot) return res.status(404).json({ error: 'No such player.' });
   if (target.id === req.user.id) return res.status(400).json({ error: 'You cannot mute yourself.' });
   if (tagRank(target) >= tagRank(req.user)) return res.status(403).json({ error: 'You cannot mute someone at or above your rank.' });
+  if (minutes === undefined || minutes === null || minutes === '') return res.status(400).json({ error: 'Minutes is required (0 to unmute).' });
   const mins = Math.floor(Number(minutes) || 0);
-  if (mins < 1 || mins > 10080) return res.status(400).json({ error: 'Minutes must be 1-10080.' });
-  target.mutedUntil = Date.now() + mins * 60000; saveDb();
-  res.json({ success: true, player: publicUser(target) });
+  if (mins > 10080) return res.status(400).json({ error: 'Minutes must be 0-10080 (0 = unmute).' });
+  target.mutedUntil = mins <= 0 ? 0 : Date.now() + mins * 60000; saveDb();
+  res.json({ success: true, unmuted: mins <= 0, player: publicUser(target) });
 });
 app.post('/api/admin/jail', auth, requireTag(3), (req, res) => {
   const { playerId, minutes } = req.body || {};
@@ -1415,6 +1440,162 @@ app.post('/api/admin/ban', auth, requireTag(4), (req, res) => {
   if (tagRank(target) >= tagRank(req.user)) return res.status(403).json({ error: 'You cannot ban someone at or above your rank.' });
   target.banned = banned === true; saveDb();
   res.json({ success: true, player: publicUser(target) });
+});
+
+// --- Owner controls: everything the Owner can change, in one tab ---
+// All Owner-only (tag rank 5). XP/merit/rank are delivered as pending grants
+// the target's client adopts on login (same pattern as give-money/give-item)
+// — the server never writes xp/level/rank onto the record itself.
+function pushPendingGrant(target, from, grant) {
+  target.pendingGrants = target.pendingGrants || [];
+  const g = { id: nextId('grant'), from, at: Date.now(), ...grant };
+  target.pendingGrants.push(g);
+  return g;
+}
+app.post('/api/admin/give-xp', auth, requireTag(5), (req, res) => {
+  const { playerId, amount } = req.body || {};
+  const target = findPlayerByRef(playerId);
+  if (!target || target.isBot) return res.status(404).json({ error: 'No such player.' });
+  const amt = Math.floor(Number(amount) || 0);
+  if (amt < 1 || amt > 10000000) return res.status(400).json({ error: 'Amount must be 1-10,000,000.' });
+  if (target.id !== req.user.id) pushPendingGrant(target, req.user.username, { type: 'xp', amount: amt });
+  saveDb();
+  res.json({ success: true, player: publicUser(target) });
+});
+app.post('/api/admin/give-merit', auth, requireTag(5), (req, res) => {
+  const { playerId, amount } = req.body || {};
+  const target = findPlayerByRef(playerId);
+  if (!target || target.isBot) return res.status(404).json({ error: 'No such player.' });
+  const amt = Math.floor(Number(amount) || 0);
+  if (amt < 1 || amt > 100) return res.status(400).json({ error: 'Amount must be 1-100.' });
+  if (target.id !== req.user.id) pushPendingGrant(target, req.user.username, { type: 'merit', amount: amt });
+  saveDb();
+  res.json({ success: true, player: publicUser(target) });
+});
+app.post('/api/admin/set-rank', auth, requireTag(5), (req, res) => {
+  const { playerId, tier, division, points } = req.body || {};
+  const target = findPlayerByRef(playerId);
+  if (!target || target.isBot) return res.status(404).json({ error: 'No such player.' });
+  const t = String(tier || '');
+  const d = String(division || '');
+  const p = Math.floor(Number(points));
+  if (!RANK_LADDER.some((x) => x.tier === t)) return res.status(400).json({ error: 'Invalid tier.' });
+  if (!RANK_DIVISIONS.includes(d)) return res.status(400).json({ error: 'Invalid division.' });
+  if (!Number.isFinite(p) || p < 0 || p > 200) return res.status(400).json({ error: 'Points must be 0-200.' });
+  if (target.id !== req.user.id) pushPendingGrant(target, req.user.username, { type: 'rank', tier: t, division: d, points: p });
+  saveDb();
+  res.json({ success: true, player: publicUser(target) });
+});
+app.post('/api/admin/reset-player', auth, requireTag(5), (req, res) => {
+  const { playerId } = req.body || {};
+  const target = findPlayerByRef(playerId);
+  if (!target || target.isBot) return res.status(404).json({ error: 'No such player.' });
+  const startMoney = (db.config && typeof db.config.startingMoney === 'number') ? db.config.startingMoney : 5000;
+  target.cloudSave = null;
+  target.cloudSaveUpdatedAt = 0;
+  target.level = 1;
+  target.xp = 0;
+  target.money = startMoney;
+  target.bank = 0;
+  target.stats = { str: 10, def: 10, spd: 10, dex: 10 };
+  target.bars = { energy: 100, nerve: 50, happy: 80, life: 100 };
+  target.jobId = null;
+  target.propertyId = null;
+  target.education = null;
+  target.inventory = {};
+  target.stocks = {};
+  target.jailUntil = 0;
+  target.hospitalUntil = 0;
+  target.missions = {};
+  target.counters = { crimes: 0, gym: 0, work: 0, travel: 0, pvpWin: 0, pvpLoss: 0, rankWins: 0, rankLosses: 0 };
+  target.rank = defaultRank();
+  target.equipped = null;
+  target.pendingGrants = [];
+  // One reset grant so the target's client wipes its local save on next login.
+  // Pushed even for a self-reset.
+  pushPendingGrant(target, req.user.username, { type: 'reset' });
+  saveDb();
+  res.json({ success: true, player: publicUser(target) });
+});
+app.post('/api/admin/set-faction', auth, requireTag(5), (req, res) => {
+  const { playerId, factionId } = req.body || {};
+  const target = findPlayerByRef(playerId);
+  if (!target || target.isBot) return res.status(404).json({ error: 'No such player.' });
+  const fid = factionId === null || factionId === undefined || factionId === '' ? null : String(factionId);
+  let faction = null;
+  if (fid !== null) {
+    faction = db.factions.find((f) => f.id === fid);
+    if (!faction) return res.status(404).json({ error: 'No such faction.' });
+  }
+  if (target.factionId) {
+    const old = db.factions.find((f) => f.id === target.factionId);
+    if (old) {
+      old.members = old.members.filter((m) => m !== target.id);
+      if (old.leaderId === target.id) old.leaderId = old.members[0] || null;
+    }
+  }
+  target.factionId = fid;
+  if (faction && !faction.members.includes(target.id)) faction.members.push(target.id);
+  saveDb();
+  res.json({ success: true, player: publicUser(target) });
+});
+app.post('/api/admin/broadcast', auth, requireTag(5), (req, res) => {
+  const { message } = req.body || {};
+  const msg = typeof message === 'string' ? message.trim() : '';
+  if (!msg) { db.broadcast = null; saveDb(); return res.json({ success: true, broadcast: null }); }
+  if (msg.length > 500) return res.status(400).json({ error: 'Broadcast must be 1-500 characters.' });
+  db.broadcast = { id: 'bc-' + Date.now(), message: msg, from: req.user.username, at: Date.now() };
+  saveDb();
+  res.json({ success: true, broadcast: db.broadcast });
+});
+app.get('/api/broadcast', (req, res) => res.json({ broadcast: db.broadcast || null }));
+app.post('/api/admin/config', auth, requireTag(5), (req, res) => {
+  const { key, value } = req.body || {};
+  const k = String(key || '');
+  if (!Object.prototype.hasOwnProperty.call(CONFIG_RANGES, k)) return res.status(400).json({ error: 'Unknown config key.' });
+  const v = Number(value);
+  const [lo, hi] = CONFIG_RANGES[k];
+  if (!Number.isFinite(v) || v < lo || v > hi) return res.status(400).json({ error: `${k} must be ${lo}-${hi}.` });
+  db.config = db.config || { ...DEFAULT_CONFIG };
+  db.config[k] = (k === 'startingMoney' || k === 'storeBuildCost') ? Math.floor(v) : v;
+  saveDb();
+  res.json({ success: true, config: db.config });
+});
+app.get('/api/config', (req, res) => res.json({ config: db.config || { ...DEFAULT_CONFIG } }));
+app.post('/api/admin/clear-chat', auth, requireTag(5), (req, res) => {
+  db.chat = [];
+  saveDb();
+  res.json({ success: true, cleared: true });
+});
+app.post('/api/admin/faction-bank', auth, requireTag(5), (req, res) => {
+  const { factionId, amount } = req.body || {};
+  const f = db.factions.find((x) => x.id === String(factionId || ''));
+  if (!f) return res.status(404).json({ error: 'No such faction.' });
+  const amt = Math.floor(Number(amount));
+  if (!Number.isFinite(amt) || amt < 0 || amt > 100000000) return res.status(400).json({ error: 'Amount must be 0-100,000,000.' });
+  f.bank = amt; saveDb();
+  res.json({ success: true, faction: f });
+});
+app.post('/api/admin/faction-leader', auth, requireTag(5), (req, res) => {
+  const { factionId, playerId } = req.body || {};
+  const f = db.factions.find((x) => x.id === String(factionId || ''));
+  if (!f) return res.status(404).json({ error: 'No such faction.' });
+  const target = findPlayerByRef(playerId);
+  if (!target || target.isBot) return res.status(404).json({ error: 'No such player.' });
+  if (!f.members.includes(target.id)) return res.status(400).json({ error: 'That player is not a member of this faction.' });
+  f.leaderId = target.id;
+  target.factionId = f.id;
+  saveDb();
+  res.json({ success: true, faction: f, player: publicUser(target) });
+});
+app.post('/api/admin/faction-disband', auth, requireTag(5), (req, res) => {
+  const { factionId } = req.body || {};
+  const f = db.factions.find((x) => x.id === String(factionId || ''));
+  if (!f) return res.status(404).json({ error: 'No such faction.' });
+  for (const u of db.users) if (u.factionId === f.id) u.factionId = null;
+  db.factions = db.factions.filter((x) => x.id !== f.id);
+  saveDb();
+  res.json({ success: true, disbanded: f.id });
 });
 
 // --- 404 / error ---
