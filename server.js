@@ -234,6 +234,47 @@ function applyRankResult(r, won) {
   return { rank, delta, promoted };
 }
 
+// ---------------------------------------------------------------------------
+// Tags & roles: Owner / Head Admin / Admin / Newb Admin / Helper.
+// The Owner is the account whose username matches OWNER_USERNAME (env, default
+// 'Mavstuss'). The Owner tag is only ever set by this bootstrap — it can
+// never be assigned through the admin API.
+// ---------------------------------------------------------------------------
+const OWNER_USERNAME = (process.env.OWNER_USERNAME || 'Mavstuss').trim();
+const TAGS = ['Owner', 'Head Admin', 'Admin', 'Newb Admin', 'Helper'];
+const TAG_RANK = { Owner: 5, 'Head Admin': 4, Admin: 3, 'Newb Admin': 2, Helper: 1 };
+const tagRank = (u) => (u && u.tag && TAG_RANK[u.tag]) || 0;
+function ensureTagsAndPids() {
+  let changed = false;
+  let nextPid = 1000;
+  for (const u of db.users || []) {
+    if (u.tag === undefined) { u.tag = null; changed = true; }
+    if (u.mutedUntil === undefined) { u.mutedUntil = 0; changed = true; }
+    if (u.banned === undefined) { u.banned = false; changed = true; }
+    if (u.pid === undefined || u.pid === null) {
+      if (u.isBot) {
+        const n = parseInt(String(u.id).replace('bot-', ''), 10);
+        u.pid = Number.isFinite(n) ? n : 0;
+      } else {
+        u.pid = nextPid;
+        nextPid += 1;
+      }
+      changed = true;
+    }
+    if (typeof u.pid === 'number' && !u.isBot) nextPid = Math.max(nextPid, u.pid + 1);
+  }
+  const owner = (db.users || []).find((x) => !x.isBot && x.username && x.username.toLowerCase() === OWNER_USERNAME.toLowerCase());
+  if (owner && owner.tag !== 'Owner') { owner.tag = 'Owner'; changed = true; }
+  if (!db.storeOverrides) { db.storeOverrides = {}; changed = true; }
+  if (changed) saveDb();
+}
+function findPlayerByRef(ref) {
+  if (ref === undefined || ref === null || ref === '') return null;
+  const s = String(ref).trim();
+  const n = Number(s);
+  return db.users.find((u) => u.id === s || (Number.isFinite(n) && u.pid === n) || u.username.toLowerCase() === s.toLowerCase()) || null;
+}
+
 let db;
 // ---------------------------------------------------------------------------
 // Datastore: PostgreSQL kapag may DATABASE_URL, data.json kapag wala.
@@ -409,8 +450,10 @@ app.post('/api/auth/register', (req, res) => {
     return res.status(409).json({ error: 'That username is already taken.' });
   if (db.users.some((u) => (u.email || '').toLowerCase() === em))
     return res.status(409).json({ error: 'An account already uses that email.' });
+  const maxPid = Math.max(999, ...db.users.filter((x) => !x.isBot).map((x) => x.pid || 0));
   const u = {
-    id: nextId('user'), username: String(username).slice(0, 20), email: em, passwordHash: hashPassword(String(password)),
+    id: nextId('user'), pid: maxPid + 1, tag: String(username).toLowerCase() === OWNER_USERNAME.toLowerCase() ? 'Owner' : null, mutedUntil: 0, banned: false,
+    username: String(username).slice(0, 20), email: em, passwordHash: hashPassword(String(password)),
     isBot: false, level: 1, xp: 0, money: 1000, bank: 0,
     stats: { str: 10, def: 10, spd: 10, dex: 10 },
     bars: { energy: 100, nerve: 50, happy: 80, life: 100 },
@@ -429,6 +472,7 @@ app.post('/api/auth/login', (req, res) => {
   const u = db.users.find((x) => x.username.toLowerCase() === id || (x.email || '').toLowerCase() === id);
   if (!u || u.isBot || !u.passwordHash || !checkPassword(String(password || ''), u.passwordHash))
     return res.status(401).json({ error: 'Wrong email/username or password.' });
+  if (u.banned) return res.status(403).json({ error: 'This account is banned.' });
   regen(u); saveDb();
   res.json({ token: makeToken(u.id), player: { ...publicUser(u), email: u.email } });
 });
@@ -466,7 +510,7 @@ app.get('/api/leaderboard', auth, (req, res) => {
     : by === 'money' ? (u) => u.money + (u.bank || 0)
     : (u) => u.xp;
   const top = [...db.users].filter((u) => !u.isBot).sort((a, b) => key(b) - key(a)).slice(0, 20)
-    .map((u) => ({ id: u.id, username: u.username, level: u.level, xp: u.xp, money: u.money, bank: u.bank || 0, crimes: (u.counters && u.counters.crimes) || 0, pvpWin: (u.counters && u.counters.pvpWin) || 0, avatar: u.avatar || null, rank: u.rank || null, isBot: false }));
+    .map((u) => ({ id: u.id, pid: u.pid, username: u.username, level: u.level, xp: u.xp, money: u.money, bank: u.bank || 0, crimes: (u.counters && u.counters.crimes) || 0, pvpWin: (u.counters && u.counters.pvpWin) || 0, avatar: u.avatar || null, rank: u.rank || null, tag: u.tag || null, isBot: false }));
   res.json({ leaderboard: top, by });
 });
 
@@ -524,6 +568,9 @@ app.post('/api/me/save', auth, (req, res) => {
       if ((v = num(save.counters[k])) !== null) u.counters[k] = Math.max(u.counters[k] || 0, Math.floor(v));
     }
   }
+  // Equipped loadout (wardrobe + weapons) so other players' profile pages can
+  // render the character as dressed. Small plain object only.
+  if (save.equipped && typeof save.equipped === 'object' && JSON.stringify(save.equipped).length < 5000) u.equipped = save.equipped;
   saveDb();
   res.json({ success: true, updatedAt: u.cloudSaveUpdatedAt, player: publicUser(u) });
 });
@@ -985,6 +1032,7 @@ app.post('/api/chat', auth, (req, res) => {
   const u = req.user;
   const { channel, message } = req.body || {};
   if (!message || String(message).trim().length === 0) return res.status(400).json({ error: 'Walang laman ang message.' });
+  if (u.mutedUntil > Date.now()) return res.status(403).json({ error: 'You are muted.', mutedUntil: u.mutedUntil });
   const msg = { id: nextId('chat'), channel: channel === 'faction' ? 'faction' : 'global', username: u.username, message: String(message).slice(0, 500), at: Date.now() };
   db.chat.push(msg); saveDb();
   broadcast({ type: 'chat', ...msg });
@@ -1074,6 +1122,117 @@ app.post('/api/missions/:id/claim', auth, (req, res) => {
   res.json({ success: true, reward: m.reward, xp: m.xp, player: publicUser(u) });
 });
 
+// --- Admin / tags & roles (server-enforced) ---
+// Owner = everything. Head Admin = mute/jail/ban + assign Admin and below.
+// Admin = mute/jail + assign Helper/Newb Admin. Newb Admin = mute only.
+// Helper = badge only, no powers. The Owner tag can never be assigned here.
+function requireTag(minRank) {
+  return (req, res, next) => {
+    if (tagRank(req.user) < minRank) return res.status(403).json({ error: 'Your tag cannot do that.' });
+    next();
+  };
+}
+app.get('/api/admin/players', auth, requireTag(3), (req, res) => {
+  const list = db.users.filter((u) => !u.isBot).map((u) => ({ id: u.id, pid: u.pid, username: u.username, level: u.level, tag: u.tag || null, avatar: u.avatar || null, banned: !!u.banned }));
+  res.json({ players: list });
+});
+app.get('/api/stores/config', auth, (req, res) => {
+  res.json({ overrides: db.storeOverrides || {} });
+});
+app.post('/api/admin/give-money', auth, requireTag(5), (req, res) => {
+  const { playerId, amount } = req.body || {};
+  const target = findPlayerByRef(playerId);
+  if (!target || target.isBot) return res.status(404).json({ error: 'No such player.' });
+  const amt = Math.floor(Number(amount) || 0);
+  if (amt < 1 || amt > 10000000) return res.status(400).json({ error: 'Amount must be 1-10,000,000.' });
+  target.money += amt; saveDb();
+  res.json({ success: true, player: publicUser(target) });
+});
+app.post('/api/admin/give-item', auth, requireTag(5), (req, res) => {
+  const { playerId, itemId } = req.body || {};
+  const target = findPlayerByRef(playerId);
+  if (!target || target.isBot) return res.status(404).json({ error: 'No such player.' });
+  const id = String(itemId || '').trim().slice(0, 100);
+  if (!id) return res.status(400).json({ error: 'Invalid item.' });
+  target.inventory = target.inventory || {};
+  target.inventory[id] = (target.inventory[id] || 0) + 1; saveDb();
+  res.json({ success: true, player: publicUser(target) });
+});
+app.post('/api/admin/set-stock', auth, requireTag(5), (req, res) => {
+  const { store, itemId, stock } = req.body || {};
+  const st = String(store || '').toLowerCase();
+  if (!['kaka', 'gun', 'blackmarket', 'merchant'].includes(st)) return res.status(400).json({ error: 'Unknown store.' });
+  const id = String(itemId || '').trim().slice(0, 100);
+  const sk = Math.floor(Number(stock) || 0);
+  if (!id || sk < 0 || sk > 1000000) return res.status(400).json({ error: 'Invalid item or stock.' });
+  db.storeOverrides = db.storeOverrides || {};
+  db.storeOverrides[st] = db.storeOverrides[st] || {};
+  db.storeOverrides[st][id] = { ...(db.storeOverrides[st][id] || {}), stock: sk };
+  saveDb();
+  res.json({ success: true, overrides: db.storeOverrides });
+});
+app.post('/api/admin/set-price', auth, requireTag(5), (req, res) => {
+  const { store, itemId, price } = req.body || {};
+  const st = String(store || '').toLowerCase();
+  if (!['kaka', 'gun', 'blackmarket', 'merchant'].includes(st)) return res.status(400).json({ error: 'Unknown store.' });
+  const id = String(itemId || '').trim().slice(0, 100);
+  const p = Math.floor(Number(price) || 0);
+  if (!id || p < 1 || p > 100000000) return res.status(400).json({ error: 'Invalid item or price.' });
+  db.storeOverrides = db.storeOverrides || {};
+  db.storeOverrides[st] = db.storeOverrides[st] || {};
+  db.storeOverrides[st][id] = { ...(db.storeOverrides[st][id] || {}), price: p };
+  saveDb();
+  res.json({ success: true, overrides: db.storeOverrides });
+});
+app.post('/api/admin/tag', auth, (req, res) => {
+  const { playerId, tag } = req.body || {};
+  const me = req.user;
+  const target = findPlayerByRef(playerId);
+  if (!target || target.isBot) return res.status(404).json({ error: 'No such player.' });
+  if (target.id === me.id) return res.status(400).json({ error: 'You cannot change your own tag.' });
+  const newTag = tag === null || tag === '' ? null : String(tag);
+  if (newTag !== null && !['Helper', 'Head Admin', 'Admin', 'Newb Admin'].includes(newTag)) return res.status(400).json({ error: 'Invalid tag. Owner cannot be assigned here.' });
+  const myRank = tagRank(me);
+  const targetRank = tagRank(target);
+  const newRank = newTag ? TAG_RANK[newTag] : 0;
+  if (myRank <= 2) return res.status(403).json({ error: 'Your tag cannot assign tags.' });
+  if (newRank >= myRank) return res.status(403).json({ error: 'You cannot assign a tag at or above your own.' });
+  if (targetRank >= myRank) return res.status(403).json({ error: 'You cannot change that player\'s tag.' });
+  target.tag = newTag; saveDb();
+  res.json({ success: true, player: publicUser(target) });
+});
+app.post('/api/admin/mute', auth, requireTag(2), (req, res) => {
+  const { playerId, minutes } = req.body || {};
+  const target = findPlayerByRef(playerId);
+  if (!target || target.isBot) return res.status(404).json({ error: 'No such player.' });
+  if (target.id === req.user.id) return res.status(400).json({ error: 'You cannot mute yourself.' });
+  if (tagRank(target) >= tagRank(req.user)) return res.status(403).json({ error: 'You cannot mute someone at or above your rank.' });
+  const mins = Math.floor(Number(minutes) || 0);
+  if (mins < 1 || mins > 10080) return res.status(400).json({ error: 'Minutes must be 1-10080.' });
+  target.mutedUntil = Date.now() + mins * 60000; saveDb();
+  res.json({ success: true, player: publicUser(target) });
+});
+app.post('/api/admin/jail', auth, requireTag(3), (req, res) => {
+  const { playerId, minutes } = req.body || {};
+  const target = findPlayerByRef(playerId);
+  if (!target || target.isBot) return res.status(404).json({ error: 'No such player.' });
+  if (target.id === req.user.id) return res.status(400).json({ error: 'You cannot jail yourself.' });
+  if (tagRank(target) >= tagRank(req.user)) return res.status(403).json({ error: 'You cannot jail someone at or above your rank.' });
+  const mins = Math.floor(Number(minutes) || 0);
+  if (mins < 1 || mins > 10080) return res.status(400).json({ error: 'Minutes must be 1-10080.' });
+  target.jailUntil = Date.now() + mins * 60000; saveDb();
+  res.json({ success: true, player: publicUser(target) });
+});
+app.post('/api/admin/ban', auth, requireTag(4), (req, res) => {
+  const { playerId, banned } = req.body || {};
+  const target = findPlayerByRef(playerId);
+  if (!target || target.isBot) return res.status(404).json({ error: 'No such player.' });
+  if (target.id === req.user.id) return res.status(400).json({ error: 'You cannot ban yourself.' });
+  if (tagRank(target) >= tagRank(req.user)) return res.status(403).json({ error: 'You cannot ban someone at or above your rank.' });
+  target.banned = banned === true; saveDb();
+  res.json({ success: true, player: publicUser(target) });
+});
+
 // --- 404 / error ---
 app.use((req, res) => res.status(404).json({ error: 'No such endpoint.', hint: 'GET /api/updates or see README.md.' }));
 app.use((err, req, res, next) => { console.error(err); res.status(500).json({ error: 'Server error.' }); });
@@ -1102,7 +1261,7 @@ wss.on('connection', (ws, req) => {
   ws.on('message', (raw) => {
     try {
       const data = JSON.parse(raw.toString());
-      if (data.type === 'chat' && data.message && user) {
+      if (data.type === 'chat' && data.message && user && !(user.mutedUntil > Date.now())) {
         const msg = { id: nextId('chat'), channel: 'global', username: user.username, message: String(data.message).slice(0, 500), at: Date.now() };
         db.chat.push(msg); saveDb();
         broadcast({ type: 'chat', ...msg });
@@ -1114,6 +1273,7 @@ wss.on('connection', (ws, req) => {
 
 initDb().then(() => {
   migrateVexonNames();
+  ensureTagsAndPids();
   server.listen(PORT, () => {
     console.log(`VEXON server running on http://localhost:${PORT}`);
     console.log(`Players (seeded bots + real): ${db.users.length} | Factions: ${db.factions.length}`);
