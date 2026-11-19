@@ -141,6 +141,8 @@ function seedDb() {
     bounties: [{ id: 'bnt-1', targetId: 'bot-12', placedBy: 'bot-7', amount: 5000, claimed: false, createdAt: Date.now() }],
     chat: [{ id: 'chat-1', channel: 'global', username: 'Vex Marlowe', message: 'Welcome to Vexon City. Who wants to join the Vexon Kings?', at: Date.now() }],
     trades: [],
+    mail: [],
+    auctions: [],
     stores: [
       { id: 'store-1', ownerId: 'bot-1', ownerName: 'Vex Marlowe', name: 'Marlowe Arms', picture: null, items: [
         { itemId: 'seed-blade', name: 'Street Blade', price: 2500, listedAt: Date.now() },
@@ -265,6 +267,12 @@ function ensureTagsAndPids() {
   }
   const owner = (db.users || []).find((x) => !x.isBot && x.username && x.username.toLowerCase() === OWNER_USERNAME.toLowerCase());
   if (owner && owner.tag !== 'Owner') { owner.tag = 'Owner'; changed = true; }
+  for (const f of db.factions || []) {
+    if (!f.armory) { f.armory = []; changed = true; }
+    if (typeof f.bank !== 'number') { f.bank = 0; changed = true; }
+  }
+  if (!db.mail) { db.mail = []; changed = true; }
+  if (!db.auctions) { db.auctions = []; changed = true; }
   if (!db.storeOverrides) { db.storeOverrides = {}; changed = true; }
   if (changed) saveDb();
 }
@@ -298,6 +306,8 @@ async function initDb() {
         db = r.rows[0].data;
         if (!db.trades) db.trades = [];
   if (!db.stores) db.stores = [];
+  if (!db.mail) db.mail = [];
+  if (!db.auctions) db.auctions = [];
         pgMode = true;
         console.log('DB: PostgreSQL — naka-load mula sa totoong database.');
         return;
@@ -320,6 +330,8 @@ async function initDb() {
   }
   if (!db.trades) db.trades = [];
   if (!db.stores) db.stores = [];
+  if (!db.mail) db.mail = [];
+  if (!db.auctions) db.auctions = [];
 }
 function saveDb() {
   if (pgMode && pgPool) {
@@ -683,6 +695,155 @@ app.delete('/api/stores/:id', auth, (req, res) => {
   db.stores = db.stores.filter((x) => x.id !== s.id);
   saveDb();
   res.json({ success: true, returnedItems: items });
+});
+
+// --- Player Mail (real players only) ---
+app.get('/api/mail', auth, (req, res) => {
+  const u = req.user;
+  const inbox = (db.mail || []).filter((m) => m.toId === u.id).sort((a, b) => b.at - a.at);
+  const sent = (db.mail || []).filter((m) => m.fromId === u.id).sort((a, b) => b.at - a.at);
+  res.json({ inbox, sent });
+});
+app.post('/api/mail', auth, (req, res) => {
+  const u = req.user;
+  const { toId, subject, message } = req.body || {};
+  const target = findPlayerByRef(toId);
+  if (!target || target.isBot) return res.status(404).json({ error: 'No such player.' });
+  if (target.id === u.id) return res.status(400).json({ error: 'You cannot mail yourself.' });
+  const subj = String(subject || '').trim().slice(0, 80);
+  const msg = String(message || '').trim().slice(0, 1000);
+  if (!msg) return res.status(400).json({ error: 'Write a message first.' });
+  const m = { id: nextId('mail'), fromId: u.id, fromName: u.username, toId: target.id, toName: target.username, subject: subj || '(no subject)', message: msg, at: Date.now(), read: false };
+  db.mail.push(m); saveDb();
+  res.status(201).json({ success: true, mail: m });
+});
+app.post('/api/mail/:id/read', auth, (req, res) => {
+  const u = req.user;
+  const m = (db.mail || []).find((x) => x.id === req.params.id && x.toId === u.id);
+  if (!m) return res.status(404).json({ error: 'No such message.' });
+  m.read = true; saveDb();
+  res.json({ success: true });
+});
+
+// --- Auctions (money is held at bid time, refunded when outbid) ---
+function settleAuctions() {
+  const now = Date.now();
+  let changed = false;
+  for (const a of db.auctions || []) {
+    if (a.status !== 'open' || a.endsAt > now) continue;
+    const seller = db.users.find((x) => x.id === a.sellerId);
+    if (a.highestBidderId) {
+      const winner = db.users.find((x) => x.id === a.highestBidderId);
+      if (winner) { winner.inventory = winner.inventory || {}; winner.inventory[a.itemId] = (winner.inventory[a.itemId] || 0) + 1; }
+      if (seller) seller.money += a.currentBid;
+      a.status = 'sold';
+    } else {
+      if (seller) { seller.inventory = seller.inventory || {}; seller.inventory[a.itemId] = (seller.inventory[a.itemId] || 0) + 1; }
+      a.status = 'expired';
+    }
+    changed = true;
+  }
+  if (changed) saveDb();
+}
+app.get('/api/auctions', auth, (req, res) => {
+  settleAuctions();
+  const open = (db.auctions || []).filter((a) => a.status === 'open').map((a) => {
+    const s = db.users.find((u) => u.id === a.sellerId);
+    const b = a.highestBidderId ? db.users.find((u) => u.id === a.highestBidderId) : null;
+    return { ...a, sellerName: s ? s.username : '?', highestBidderName: b ? b.username : null };
+  });
+  res.json({ auctions: open });
+});
+app.post('/api/auctions', auth, (req, res) => {
+  const u = req.user;
+  const { itemId, name, startPrice, hours } = req.body || {};
+  const id = String(itemId || '').trim().slice(0, 100);
+  const nm = String(name || '').trim().slice(0, 80);
+  const p = Math.floor(Number(startPrice) || 0);
+  const h = Math.min(24, Math.max(1, Math.floor(Number(hours) || 24)));
+  if (!id || !nm || p < 1 || p > 100000000) return res.status(400).json({ error: 'Invalid item or price.' });
+  if (!u.inventory || !u.inventory[id] || u.inventory[id] < 1) return res.status(400).json({ error: 'You do not own that item.' });
+  u.inventory[id] -= 1;
+  if (u.inventory[id] <= 0) delete u.inventory[id];
+  const a = { id: nextId('auc'), sellerId: u.id, itemId: id, name: nm, startPrice: p, currentBid: 0, highestBidderId: null, endsAt: Date.now() + h * 60 * 60 * 1000, status: 'open', createdAt: Date.now() };
+  db.auctions.push(a); saveDb();
+  res.status(201).json({ success: true, auction: a });
+});
+app.post('/api/auctions/:id/bid', auth, (req, res) => {
+  const u = req.user;
+  settleAuctions();
+  const a = (db.auctions || []).find((x) => x.id === req.params.id && x.status === 'open');
+  if (!a) return res.status(404).json({ error: 'No such open auction.' });
+  if (a.sellerId === u.id) return res.status(400).json({ error: 'You cannot bid on your own auction.' });
+  const amt = Math.floor(Number((req.body || {}).amount) || 0);
+  const minBid = a.currentBid > 0 ? a.currentBid + 1 : a.startPrice;
+  if (amt < minBid) return res.status(400).json({ error: `Bid at least $${minBid}.` });
+  if (u.money < amt) return res.status(400).json({ error: 'Not enough money.' });
+  if (a.highestBidderId) {
+    const prev = db.users.find((x) => x.id === a.highestBidderId);
+    if (prev) prev.money += a.currentBid;
+  }
+  u.money -= amt;
+  a.currentBid = amt; a.highestBidderId = u.id; saveDb();
+  res.json({ success: true, auction: a });
+});
+
+// --- Faction Armory + Bank (shared faction storage) ---
+app.get('/api/faction/armory', auth, (req, res) => {
+  const u = req.user;
+  const f = db.factions.find((x) => x.id === u.factionId);
+  if (!f) return res.status(400).json({ error: 'You are not in a faction.' });
+  res.json({ faction: f.name, armory: f.armory || [], bank: f.bank || 0, leaderId: f.leaderId });
+});
+app.post('/api/faction/armory/deposit', auth, (req, res) => {
+  const u = req.user;
+  const f = db.factions.find((x) => x.id === u.factionId);
+  if (!f) return res.status(400).json({ error: 'You are not in a faction.' });
+  const { itemId, name } = req.body || {};
+  const id = String(itemId || '').trim().slice(0, 100);
+  const nm = String(name || '').trim().slice(0, 80);
+  if (!id || !nm) return res.status(400).json({ error: 'Invalid item.' });
+  if (!u.inventory || !u.inventory[id] || u.inventory[id] < 1) return res.status(400).json({ error: 'You do not own that item.' });
+  u.inventory[id] -= 1;
+  if (u.inventory[id] <= 0) delete u.inventory[id];
+  f.armory = f.armory || [];
+  f.armory.push({ itemId: id, name: nm, depositedBy: u.username, at: Date.now() });
+  saveDb();
+  res.json({ success: true, armory: f.armory });
+});
+app.post('/api/faction/armory/withdraw', auth, (req, res) => {
+  const u = req.user;
+  const f = db.factions.find((x) => x.id === u.factionId);
+  if (!f) return res.status(400).json({ error: 'You are not in a faction.' });
+  if (f.leaderId !== u.id) return res.status(403).json({ error: 'Only the faction leader can withdraw from the armory.' });
+  const { itemId } = req.body || {};
+  const id = String(itemId || '').trim();
+  const idx = (f.armory || []).findIndex((i) => i.itemId === id);
+  if (idx < 0) return res.status(404).json({ error: 'That item is not in the armory.' });
+  const item = f.armory.splice(idx, 1)[0];
+  u.inventory = u.inventory || {};
+  u.inventory[item.itemId] = (u.inventory[item.itemId] || 0) + 1;
+  saveDb();
+  res.json({ success: true, item, armory: f.armory });
+});
+app.post('/api/faction/bank/deposit', auth, (req, res) => {
+  const u = req.user;
+  const f = db.factions.find((x) => x.id === u.factionId);
+  if (!f) return res.status(400).json({ error: 'You are not in a faction.' });
+  const amt = Math.floor(Number((req.body || {}).amount) || 0);
+  if (amt < 1 || amt > u.money) return res.status(400).json({ error: 'Invalid amount.' });
+  u.money -= amt; f.bank = (f.bank || 0) + amt; saveDb();
+  res.json({ success: true, bank: f.bank, player: publicUser(u) });
+});
+app.post('/api/faction/bank/withdraw', auth, (req, res) => {
+  const u = req.user;
+  const f = db.factions.find((x) => x.id === u.factionId);
+  if (!f) return res.status(400).json({ error: 'You are not in a faction.' });
+  if (f.leaderId !== u.id) return res.status(403).json({ error: 'Only the faction leader can withdraw from the bank.' });
+  const amt = Math.floor(Number((req.body || {}).amount) || 0);
+  if (amt < 1 || amt > (f.bank || 0)) return res.status(400).json({ error: 'Invalid amount.' });
+  f.bank -= amt; u.money += amt; saveDb();
+  res.json({ success: true, bank: f.bank, player: publicUser(u) });
 });
 
 // --- Crimes ---
@@ -1265,6 +1426,23 @@ app.use((err, req, res, next) => { console.error(err); res.status(500).json({ er
 // ---------------------------------------------------------------------------
 setInterval(() => {
   db.stocks.forEach((s) => { s.price = Math.max(1, Math.round(s.price * (1 + (Math.random() - 0.5) * 0.1))); });
+  // Bot bidders keep auctions alive: occasionally outbid the current price.
+  settleAuctions();
+  for (const a of db.auctions || []) {
+    if (a.status !== 'open' || Math.random() > 0.25) continue;
+    const bots = db.users.filter((u) => u.isBot);
+    const bot = bots[Math.floor(Math.random() * bots.length)];
+    if (!bot) continue;
+    const minBid = a.currentBid > 0 ? a.currentBid + 1 : a.startPrice;
+    const bid = Math.round(minBid * (1 + Math.random() * 0.15));
+    if (bot.money < bid) continue;
+    if (a.highestBidderId) {
+      const prev = db.users.find((x) => x.id === a.highestBidderId);
+      if (prev) prev.money += a.currentBid;
+    }
+    bot.money -= bid;
+    a.currentBid = bid; a.highestBidderId = bot.id;
+  }
   saveDb();
 }, 5 * 60 * 1000);
 
