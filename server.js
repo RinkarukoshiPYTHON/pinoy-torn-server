@@ -490,7 +490,7 @@ app.post('/api/auth/register', (req, res) => {
   const u = {
     id: nextId('user'), pid: maxPid + 1, tag: String(username).toLowerCase() === OWNER_USERNAME.toLowerCase() ? 'Owner' : null, mutedUntil: 0, banned: false,
     username: String(username).slice(0, 20), email: em, passwordHash: hashPassword(String(password)),
-    isBot: false, level: 1, xp: 0, money: 1000, bank: 0,
+    isBot: false, level: 1, xp: 0, money: (db.config && typeof db.config.startingMoney === 'number') ? db.config.startingMoney : 5000, bank: 0,
     stats: { str: 10, def: 10, spd: 10, dex: 10 },
     bars: { energy: 100, nerve: 50, happy: 80, life: 100 },
     lastTick: Date.now(), city: 'manila', jobId: null, factionId: null,
@@ -658,12 +658,13 @@ app.post('/api/stores', auth, (req, res) => {
   const nm = String(name || '').trim().slice(0, 30);
   if (nm.length < 3) return res.status(400).json({ error: 'Store name must be at least 3 characters.' });
   if ((db.stores || []).some((s) => s.ownerId === u.id)) return res.status(400).json({ error: 'You already have a store.' });
-  if (u.money < 100000) return res.status(400).json({ error: 'You need $100,000 to build a store.' });
+  const cost = (db.config && typeof db.config.storeBuildCost === 'number') ? db.config.storeBuildCost : 500000;
+  if (u.money < cost) return res.status(400).json({ error: 'You need $' + cost.toLocaleString('en-US') + ' to build a store.' });
   if (picture !== undefined && picture !== null && picture !== '') {
     if (typeof picture !== 'string' || !/^data:image\/(jpeg|png|webp);base64,/.test(picture)) return res.status(400).json({ error: 'Invalid store picture (JPEG/PNG only).' });
     if (picture.length > 300000) return res.status(400).json({ error: 'Store picture too large (max ~200KB).' });
   }
-  u.money -= 100000;
+  u.money -= cost;
   const s = { id: nextId('store'), ownerId: u.id, ownerName: u.username, name: nm, picture: picture || null, items: [], createdAt: Date.now() };
   db.stores.push(s); saveDb();
   res.status(201).json({ success: true, store: storePublic(s), player: publicUser(u) });
