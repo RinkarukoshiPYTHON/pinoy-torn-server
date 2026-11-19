@@ -491,6 +491,17 @@ app.post('/api/me/avatar', auth, (req, res) => {
   u.avatar = avatar; saveDb();
   res.json({ success: true, message: 'Your profile pic has been saved.', player: publicUser(u) });
 });
+// Pending grants: the client adopts them into its own wallet/inventory on
+// login, then claims them here so they are never applied twice.
+app.post('/api/me/grants/claim', auth, (req, res) => {
+  const u = req.user;
+  const ids = ((req.body || {}).ids || []).map((x) => String(x));
+  if (!Array.isArray(ids) || ids.length === 0 || ids.length > 50) return res.status(400).json({ error: 'ids must be a non-empty list (max 50).' });
+  const before = (u.pendingGrants || []).length;
+  u.pendingGrants = (u.pendingGrants || []).filter((g) => !ids.includes(g.id));
+  saveDb();
+  res.json({ success: true, claimed: before - u.pendingGrants.length, remaining: u.pendingGrants.length });
+});
 app.get('/api/players', auth, (req, res) => {
   const list = db.users.map((u) => { regen(u); return publicUser(u); })
     .sort((a, b) => b.level - a.level || b.money - a.money);
@@ -1145,7 +1156,14 @@ app.post('/api/admin/give-money', auth, requireTag(5), (req, res) => {
   if (!target || target.isBot) return res.status(404).json({ error: 'No such player.' });
   const amt = Math.floor(Number(amount) || 0);
   if (amt < 1 || amt > 10000000) return res.status(400).json({ error: 'Amount must be 1-10,000,000.' });
-  target.money += amt; saveDb();
+  target.money += amt;
+  // Pending grant: the target's game adopts it into their real wallet on
+  // login (their wallet lives in local state + cloud save, not this record).
+  if (target.id !== req.user.id) {
+    target.pendingGrants = target.pendingGrants || [];
+    target.pendingGrants.push({ id: nextId('grant'), type: 'money', amount: amt, from: req.user.username, at: Date.now() });
+  }
+  saveDb();
   res.json({ success: true, player: publicUser(target) });
 });
 app.post('/api/admin/give-item', auth, requireTag(5), (req, res) => {
@@ -1155,7 +1173,12 @@ app.post('/api/admin/give-item', auth, requireTag(5), (req, res) => {
   const id = String(itemId || '').trim().slice(0, 100);
   if (!id) return res.status(400).json({ error: 'Invalid item.' });
   target.inventory = target.inventory || {};
-  target.inventory[id] = (target.inventory[id] || 0) + 1; saveDb();
+  target.inventory[id] = (target.inventory[id] || 0) + 1;
+  if (target.id !== req.user.id) {
+    target.pendingGrants = target.pendingGrants || [];
+    target.pendingGrants.push({ id: nextId('grant'), type: 'item', itemId: id, from: req.user.username, at: Date.now() });
+  }
+  saveDb();
   res.json({ success: true, player: publicUser(target) });
 });
 app.post('/api/admin/set-stock', auth, requireTag(5), (req, res) => {
