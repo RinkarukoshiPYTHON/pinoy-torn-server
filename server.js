@@ -1289,6 +1289,19 @@ app.post('/api/jail/bail', auth, (req, res) => {
   u.money -= cost; u.jailUntil = 0; saveDb();
   res.json({ success: true, message: 'Nakapiansa ka na. Malaya ka na!', player: publicUser(u) });
 });
+app.post('/api/jail/bust', auth, (req, res) => {
+  // Any logged-in player may bust ANOTHER jailed player out. No charge and
+  // no reward server-side — the client spends Guts locally first and awards
+  // cash/Standing locally. Self-bust uses the client's own Bust/Bribe flow.
+  const { playerId } = req.body || {};
+  if (playerId === undefined || playerId === null || playerId === '') return res.status(400).json({ error: 'playerId is required.' });
+  const target = findPlayerByRef(playerId);
+  if (!target) return res.status(404).json({ error: 'No such player.' });
+  if (target.id === req.user.id) return res.status(400).json({ error: 'You cannot bust yourself out — use Bust or Bribe on your own cell.' });
+  if (target.jailUntil <= Date.now()) return res.status(400).json({ error: 'That player is not in jail.' });
+  target.jailUntil = 0; saveDb();
+  res.json({ success: true, freed: target.username });
+});
 app.post('/api/hospital/heal', auth, (req, res) => {
   const u = req.user;
   if (u.hospitalUntil <= Date.now()) { u.bars.life = 100; saveDb(); return res.json({ success: true, player: publicUser(u) }); }
